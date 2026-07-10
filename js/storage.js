@@ -2,9 +2,12 @@ const storage = {
   dbName: 'WebScannerDB',
   storeName: 'scans',
   db: null,
+  initPromise: null,
 
   async init() {
-    return new Promise((resolve, reject) => {
+    if (this.initPromise) return this.initPromise;
+
+    this.initPromise = new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, 1);
 
       request.onupgradeneeded = (e) => {
@@ -20,16 +23,21 @@ const storage = {
         resolve();
       };
 
-      request.onerror = (e) => reject(e);
+      request.onerror = (e) => reject(e.target.error);
     });
+
+    return this.initPromise;
   },
 
   async saveScan(canvas, name) {
-    if (!this.db) await this.init();
+    await this.init();
     const imgData = canvas.toDataURL('image/jpeg', 0.9);
 
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(this.storeName, 'readwrite');
+      tx.onabort = () => reject(tx.error || new Error('Storage transaction aborted'));
+      tx.onerror = () => reject(tx.error || new Error('Storage transaction failed'));
+
       const store = tx.objectStore(this.storeName);
       const scan = {
         name: name || 'Scan_' + Date.now(),
@@ -44,10 +52,13 @@ const storage = {
   },
 
   async getHistory() {
-    if (!this.db) await this.init();
+    await this.init();
 
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(this.storeName, 'readonly');
+      tx.onabort = () => reject(tx.error || new Error('Storage transaction aborted'));
+      tx.onerror = () => reject(tx.error || new Error('Storage transaction failed'));
+
       const store = tx.objectStore(this.storeName);
       const index = store.index('timestamp');
       const request = index.openCursor(null, 'prev');
@@ -68,10 +79,13 @@ const storage = {
   },
 
   async deleteScan(id) {
-    if (!this.db) await this.init();
+    await this.init();
 
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(this.storeName, 'readwrite');
+      tx.onabort = () => reject(tx.error || new Error('Storage transaction aborted'));
+      tx.onerror = () => reject(tx.error || new Error('Storage transaction failed'));
+
       const store = tx.objectStore(this.storeName);
       const request = store.delete(id);
 

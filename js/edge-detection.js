@@ -86,12 +86,11 @@ const edgeDetection = {
     if (!found) return null;
 
     const padding = 10;
-    return {
-      x: Math.max(0, minX - padding),
-      y: Math.max(0, minY - padding),
-      w: Math.min(w, maxX - minX + padding * 2),
-      h: Math.min(h, maxY - minY + padding * 2)
-    };
+    const x = Math.max(0, minX - padding);
+    const y = Math.max(0, minY - padding);
+    const w = Math.max(1, Math.min(canvas.width - x, maxX - minX + padding * 2));
+    const h = Math.max(1, Math.min(canvas.height - y, maxY - minY + padding * 2));
+    return { x, y, w, h };
   },
 
   cropCanvas(canvas, ctx, rect) {

@@ -23,13 +23,20 @@ const app = {
   ctx: document.getElementById('mainCanvas').getContext('2d'),
 
   init() {
+    const savedMode = localStorage.getItem('scanner.darkMode');
+    if (savedMode !== null) {
+      this.state.darkMode = savedMode === 'true';
+    }
+
     this.state.lang = detectLanguage();
     setLanguage(this.state.lang);
     document.getElementById('langSwitcher').value = this.state.lang;
     this.initEventListeners();
+    this.syncDarkModeUI();
+    camera.bindCaptureHandler();
     lucide.createIcons();
     storage.init().catch(console.warn);
-    
+
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(console.warn);
     }
@@ -42,14 +49,21 @@ const app = {
 
     document.getElementById('darkToggle').addEventListener('click', () => {
       this.state.darkMode = !this.state.darkMode;
-      document.body.classList.toggle('dark-mode', this.state.darkMode);
+      localStorage.setItem('scanner.darkMode', String(this.state.darkMode));
+      this.syncDarkModeUI();
     });
 
     document.getElementById('navCamera').addEventListener('click', () => this.openCamera());
     document.getElementById('emptyCamera').addEventListener('click', () => this.openCamera());
 
-    document.getElementById('navImport').addEventListener('click', () => document.getElementById('fileInput').click());
-    document.getElementById('emptyImport').addEventListener('click', () => document.getElementById('fileInput').click());
+    document.getElementById('navImport').addEventListener('click', () => {
+      camera.stop();
+      document.getElementById('fileInput').click();
+    });
+    document.getElementById('emptyImport').addEventListener('click', () => {
+      camera.stop();
+      document.getElementById('fileInput').click();
+    });
 
     document.getElementById('fileInput').addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
@@ -58,8 +72,12 @@ const app = {
       }
     });
 
-    document.getElementById('navHistory').addEventListener('click', () => this.showHistory());
+    document.getElementById('navHistory').addEventListener('click', () => {
+      camera.stop();
+      this.showHistory();
+    });
     document.getElementById('closeHistory').addEventListener('click', () => {
+      camera.stop();
       document.getElementById('historyView').classList.add('hidden');
     });
 
@@ -88,7 +106,30 @@ const app = {
     this.initExportButtons();
   },
 
+  showEditor() {
+    document.getElementById('editorArea')?.classList.remove('hidden');
+    document.getElementById('bottomNav')?.classList.remove('hidden');
+    document.getElementById('emptyState')?.classList.add('hidden');
+  },
+
+  syncDarkModeUI() {
+    const darkToggle = document.getElementById('darkToggle');
+    if (darkToggle) {
+      darkToggle.innerHTML = `<i data-lucide="${this.state.darkMode ? 'sun' : 'moon'}"></i>`;
+    }
+    document.body.classList.toggle('dark-mode', this.state.darkMode);
+    lucide.createIcons();
+  },
+
+  setCurrentPageImage(image) {
+    const page = this.state.pages[this.state.currentPageIndex];
+    if (!page) return;
+    page.originalImage = image;
+    page.currentImageData = null;
+  },
+
   openCamera() {
+    camera.stop();
     camera.start();
   },
 
@@ -244,11 +285,23 @@ const app = {
 
           pdfExport.exportToPdf(pagesCanvases).then(() => {
             this.showToast(t('saved'));
-            storage.saveScan(canvas, 'multi_scan_' + Date.now()).catch(console.warn);
+            storage.saveScan(canvas, 'multi_scan_' + Date.now()).catch((err) => {
+              if (err?.name === 'QuotaExceededError') {
+                this.showToast(t('storageFull'));
+              } else {
+                console.warn(err);
+              }
+            });
           });
         } else {
           pdfExport.exportToImage(canvas, format);
-          storage.saveScan(canvas, 'scan_' + Date.now()).catch(console.warn);
+          storage.saveScan(canvas, 'scan_' + Date.now()).catch((err) => {
+            if (err?.name === 'QuotaExceededError') {
+              this.showToast(t('storageFull'));
+            } else {
+              console.warn(err);
+            }
+          });
         }
         document.getElementById('exportSheet').classList.add('hidden');
       });
@@ -257,10 +310,13 @@ const app = {
 
   applyFilters() {
     if (!this.state.imageLoaded) return;
+    const page = this.state.pages[this.state.currentPageIndex];
+    if (!page || !page.originalImage) return;
+
     const filters = this.state.filters;
     const canvas = this.canvas;
     const ctx = this.ctx;
-    const img = this.state.pages[this.state.currentPageIndex].originalImage;
+    const img = page.originalImage;
 
     ctx.filter = [
       `brightness(${100 + filters.brightness}%)`,
@@ -289,7 +345,7 @@ const app = {
       this.applySharpness(filters.sharpness);
     }
 
-    this.state.pages[this.state.currentPageIndex].currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    page.currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   },
 
   applySharpness(amount) {
@@ -333,11 +389,17 @@ const app = {
     setTimeout(() => {
       const success = edgeDetection.detectAndCrop(this.canvas, this.ctx);
       if (success) {
-        this.state.canvasWidth = this.canvas.width;
-        this.state.canvasHeight = this.canvas.height;
-        this.state.currentImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-        this.showToast(t('cropSuccess'));
-        this.applyFilters();
+        const croppedImage = new Image();
+        croppedImage.onload = () => {
+          this.setCurrentPageImage(croppedImage);
+          this.state.canvasWidth = this.canvas.width;
+          this.state.canvasHeight = this.canvas.height;
+          this.state.currentImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+          this.state.imageLoaded = true;
+          this.showToast(t('cropSuccess'));
+          this.applyFilters();
+        };
+        croppedImage.src = this.canvas.toDataURL();
       } else {
         this.showToast(t('error'));
       }
@@ -350,7 +412,9 @@ const app = {
 
     const canvas = this.canvas;
     const ctx = this.ctx;
-    const img = this.state.originalImage;
+    const page = this.state.pages[this.state.currentPageIndex];
+    const img = page ? page.originalImage : null;
+    if (!img) return;
 
     const radians = (this.state.rotation * Math.PI) / 180;
     const cos = Math.abs(Math.cos(radians));
@@ -369,20 +433,24 @@ const app = {
     canvas.width = newW;
     canvas.height = newH;
     ctx.drawImage(tempCanvas, 0, 0);
-    this.state.originalImage = new Image();
-    this.state.originalImage.src = tempCanvas.toDataURL();
-    this.state.originalImage.onload = () => {
+    const transformedImage = new Image();
+    transformedImage.onload = () => {
+      this.setCurrentPageImage(transformedImage);
       this.state.canvasWidth = canvas.width;
       this.state.canvasHeight = canvas.height;
+      this.state.imageLoaded = true;
       this.applyFilters();
     };
+    transformedImage.src = tempCanvas.toDataURL();
   },
 
   flip(direction) {
     if (!this.state.imageLoaded) return;
     const canvas = this.canvas;
     const ctx = this.ctx;
-    const img = this.state.originalImage;
+    const page = this.state.pages[this.state.currentPageIndex];
+    const img = page ? page.originalImage : null;
+    if (!img) return;
 
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = canvas.width;
@@ -399,9 +467,13 @@ const app = {
     tempCtx.drawImage(img, 0, 0);
 
     ctx.drawImage(tempCanvas, 0, 0);
-    this.state.originalImage = new Image();
-    this.state.originalImage.src = tempCanvas.toDataURL();
-    this.state.originalImage.onload = () => this.applyFilters();
+    const transformedImage = new Image();
+    transformedImage.onload = () => {
+      this.setCurrentPageImage(transformedImage);
+      this.state.imageLoaded = true;
+      this.applyFilters();
+    };
+    transformedImage.src = tempCanvas.toDataURL();
   },
 
   resetFilters() {
@@ -477,12 +549,17 @@ const app = {
   },
 
   async startOcr() {
+    if (!this.state.imageLoaded || !this.state.pages[this.state.currentPageIndex]) {
+      this.showToast(t('noImage'));
+      return;
+    }
+
     document.getElementById('ocrSheet').classList.remove('hidden');
     lucide.createIcons();
     const resultDiv = document.getElementById('ocrResult');
     resultDiv.innerHTML = `<p><i data-lucide="loader"></i> ${t('processing')}</p>`;
     lucide.createIcons();
-    
+
     try {
       const text = await ocrEngine.recognize(this.canvas);
       resultDiv.innerText = text || '(No text detected)';
