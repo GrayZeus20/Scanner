@@ -1,0 +1,47 @@
+.dark-mode {
+  --bg: #121212;
+  --surface: #1e1e1e;
+  --text: #e0e0e0;
+  --text-secondary: #a0a0a0;
+  --border: #333333;
+  --nav-btn-active: #3f51b5;
+}
+
+.dark-mode body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.dark-mode #header,
+.dark-mode #bottomNav,
+.dark-mode .sheet-panel,
+.dark-mode .history-item .history-meta {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.dark-mode .lang-select {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.dark-mode .canvas-wrapper {
+  background: #000;
+}
+
+.dark-mode .export-btn,
+.dark-mode .btn-secondary {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.dark-mode .export-btn:hover,
+.dark-mode .btn-secondary:hover {
+  background: var(--border);
+}
+
+.dark-mode .history-meta {
+  color: var(--text);
+}

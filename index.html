@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>WebScanner</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/dark-mode.css">
+  <link rel="manifest" href="manifest.json">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <div class="header-left">
+        <div class="logo">
+          <i data-lucide="scan-eye" class="logo-icon"></i>
+          <span class="logo-text" data-i18n="appName">WebScanner</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <select id="langSwitcher" class="lang-select">
+          <option value="id">🇮🇩 Indonesia</option>
+          <option value="en">🇬🇧 English</option>
+        </select>
+        <button id="darkToggle" class="icon-btn" title="Toggle Dark Mode">
+          <i data-lucide="moon"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main id="main">
+      <!-- History View -->
+      <div id="historyView" class="hidden">
+        <div class="history-header">
+          <h3 data-i18n="history">Riwayat Scan</h3>
+          <button id="closeHistory" class="icon-btn"><i data-lucide="x"></i></button>
+        </div>
+        <div id="historyList" class="history-list"></div>
+      </div>
+
+      <!-- Preview Area -->
+      <div id="previewArea">
+        <div id="emptyState">
+          <i data-lucide="scan-eye" class="empty-icon"></i>
+          <h2 data-i18n="emptyTitle">Belum ada dokumen</h2>
+          <p data-i18n="emptyDesc">Ambil foto atau impor gambar untuk memulai</p>
+          <div class="empty-actions">
+            <button id="emptyCamera" class="btn btn-primary">
+              <i data-lucide="camera"></i>
+              <span data-i18n="takePhoto">Ambil Foto</span>
+            </button>
+            <button id="emptyImport" class="btn btn-secondary">
+              <i data-lucide="upload"></i>
+              <span data-i18n="importFile">Impor File</span>
+            </button>
+          </div>
+        </div>
+        <div id="editorArea" class="hidden">
+          <div class="pages-tray" id="pagesTray"></div>
+          <div class="canvas-wrapper">
+            <canvas id="mainCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- Camera View -->
+      <div id="cameraView" class="hidden">
+        <video id="video" autoplay playsinline></video>
+        <div class="camera-overlay">
+          <div class="frame-guide"></div>
+        </div>
+        <div class="camera-controls">
+          <button id="captureBtn" class="capture-btn">
+            <i data-lucide="circle"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Bottom Navigation -->
+      <nav id="bottomNav" class="hidden">
+        <button id="navHistory" class="nav-btn">
+          <i data-lucide="history"></i>
+          <span data-i18n="history">Riwayat</span>
+        </button>
+        <button id="navCamera" class="nav-btn">
+          <i data-lucide="camera"></i>
+          <span data-i18n="takePhoto">Ambil Foto</span>
+        </button>
+        <button id="navImport" class="nav-btn">
+          <i data-lucide="upload"></i>
+          <span data-i18n="importFile">Impor File</span>
+        </button>
+        <button id="navCrop" class="nav-btn">
+          <i data-lucide="crop"></i>
+          <span data-i18n="autoCrop">Potong</span>
+        </button>
+        <button id="navFilter" class="nav-btn">
+          <i data-lucide="sliders-horizontal"></i>
+          <span data-i18n="filters">Filter</span>
+        </button>
+        <button id="navOcr" class="nav-btn">
+          <i data-lucide="type"></i>
+          <span data-i18n="ocr">Teks</span>
+        </button>
+        <button id="navExport" class="nav-btn">
+          <i data-lucide="download"></i>
+          <span data-i18n="export">Simpan</span>
+        </button>
+      </nav>
+    </main>
+
+    <!-- Filter Sheet Panel -->
+    <div id="filterSheet" class="sheet-panel hidden">
+      <div class="sheet-header">
+        <h3 data-i18n="filters">Filter</h3>
+        <button id="closeFilterSheet" class="icon-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <div class="filter-group">
+          <label data-i18n="brightness">Kecerahan</label>
+          <input type="range" id="filterBrightness" min="-100" max="100" value="0" class="filter-slider">
+          <span id="brightnessVal" class="filter-val">0</span>
+        </div>
+        <div class="filter-group">
+          <label data-i18n="contrast">Kontras</label>
+          <input type="range" id="filterContrast" min="-100" max="100" value="0" class="filter-slider">
+          <span id="contrastVal" class="filter-val">0</span>
+        </div>
+        <div class="filter-group">
+          <label data-i18n="saturation">Saturasi</label>
+          <input type="range" id="filterSaturation" min="-100" max="100" value="0" class="filter-slider">
+          <span id="saturationVal" class="filter-val">0</span>
+        </div>
+        <div class="filter-group">
+          <label data-i18n="sharpness">Ketajaman</label>
+          <input type="range" id="filterSharpness" min="0" max="100" value="0" class="filter-slider">
+          <span id="sharpnessVal" class="filter-val">0</span>
+        </div>
+        <div class="filter-divider"></div>
+        <div class="filter-group toggle-group">
+          <label data-i18n="grayscale">Abu-abu</label>
+          <label class="toggle">
+            <input type="checkbox" id="filterGrayscale">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="filter-group toggle-group">
+          <label data-i18n="sepia">Sepia</label>
+          <label class="toggle">
+            <input type="checkbox" id="filterSepia">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="filter-group toggle-group">
+          <label data-i18n="invert">Invert</label>
+          <label class="toggle">
+            <input type="checkbox" id="filterInvert">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="filter-group toggle-group">
+          <label data-i18n="bwThreshold">Hitam Putih</label>
+          <label class="toggle">
+            <input type="checkbox" id="filterBW">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="filter-group" id="thresholdGroup" class="hidden">
+          <label data-i18n="threshold">Ambang Batas</label>
+          <input type="range" id="filterThreshold" min="1" max="254" value="128" class="filter-slider">
+          <span id="thresholdVal" class="filter-val">128</span>
+        </div>
+        <div class="filter-divider"></div>
+        <div class="filter-row">
+          <button id="rotateLeftBtn" class="filter-action-btn">
+            <i data-lucide="rotate-ccw"></i>
+            <span data-i18n="rotateLeft">Putar Kiri</span>
+          </button>
+          <button id="rotateRightBtn" class="filter-action-btn">
+            <i data-lucide="rotate-cw"></i>
+            <span data-i18n="rotateRight">Putar Kanan</span>
+          </button>
+          <button id="flipHBtn" class="filter-action-btn">
+            <i data-lucide="flip-horizontal"></i>
+            <span data-i18n="flipH">Balik H</span>
+          </button>
+          <button id="flipVBtn" class="filter-action-btn">
+            <i data-lucide="flip-vertical"></i>
+            <span data-i18n="flipV">Balik V</span>
+          </button>
+        </div>
+        <div class="filter-divider"></div>
+        <button id="resetFilterBtn" class="btn btn-danger">
+          <i data-lucide="rotate-ccw"></i>
+          <span data-i18n="resetFilter">Reset Filter</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- OCR Sheet Panel -->
+    <div id="ocrSheet" class="sheet-panel hidden">
+      <div class="sheet-header">
+        <h3 data-i18n="ocr">Teks (OCR)</h3>
+        <button id="closeOcrSheet" class="icon-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <div id="ocrResult" class="ocr-result" contenteditable="true">
+          <p style="color: var(--text-secondary)"><i data-lucide="loader"></i> <span data-i18n="processing">Memproses...</span></p>
+        </div>
+        <button id="copyOcrBtn" class="btn btn-primary" style="margin-top: 16px;">
+          <i data-lucide="copy"></i>
+          <span data-i18n="copyText">Salin Teks</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Export Sheet Panel -->
+    <div id="exportSheet" class="sheet-panel hidden">
+      <div class="sheet-header">
+        <h3 data-i18n="export">Simpan</h3>
+        <button id="closeExportSheet" class="icon-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <button class="export-btn" data-format="pdf">
+          <i data-lucide="file-text"></i>
+          <div>
+            <strong data-i18n="exportPdf">PDF</strong>
+            <small data-i18n="exportPdfDesc">Simpan sebagai dokumen PDF</small>
+          </div>
+        </button>
+        <button class="export-btn" data-format="png">
+          <i data-lucide="image"></i>
+          <div>
+            <strong data-i18n="exportPng">PNG</strong>
+            <small data-i18n="exportPngDesc">Gambar berkualitas tinggi</small>
+          </div>
+        </button>
+        <button class="export-btn" data-format="jpg">
+          <i data-lucide="image"></i>
+          <div>
+            <strong data-i18n="exportJpg">JPG</strong>
+            <small data-i18n="exportJpgDesc">Ukuran file lebih kecil</small>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Hidden file input -->
+    <input type="file" id="fileInput" accept="image/*" hidden>
+  </div>
+
+  <script src="js/i18n.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/edge-detection.js"></script>
+  <script src="js/pdf-export.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/ocr.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
