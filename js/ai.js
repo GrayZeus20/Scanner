@@ -119,17 +119,23 @@ const aiEngine = {
     return output;
   },
 
-  async analyzeCloud(text) {
+  async analyzeCloud(text, imageDataUrl = null) {
     if (!navigator.onLine) {
       throw new Error('Tidak ada koneksi internet.');
     }
 
-    const prompt = `Analisis dokumen berikut secara mendalam. Berikan:
+    let prompt = `Analisis dokumen berikut secara mendalam. Berikan:
 1. Jenis Dokumen
 2. Ringkasan Singkat
 3. Poin-Poin Penting (dalam bentuk poin)
 4. Data Terstruktur (jika ada: tanggal, nama, jumlah uang, dll dalam format JSON)
 Teks: ${text}`;
+    let body = { prompt };
+
+    if (imageDataUrl) {
+      prompt = "Analisis gambar ini secara visual. Jelaskan apa yang terlihat di gambar, objek utamanya, dan informasikan jika ada teks yang tidak terbaca oleh OCR.";
+      body = { prompt, image: imageDataUrl };
+    }
 
     try {
       const controller = new AbortController();
@@ -138,7 +144,7 @@ Teks: ${text}`;
       const response = await fetch(this._workerUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify(body),
         signal: controller.signal
       });
 

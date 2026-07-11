@@ -176,7 +176,7 @@ const app = {
       this.cancelOcr();
       this.toggleSheet('ocrSheet', false);
     });
-    document.getElementById('cancelOcrBtn').addEventListener('click', () => {
+    document.getElementById('cancelOcrBtn')?.addEventListener('click', () => {
       this.cancelOcr();
     });
 
@@ -977,11 +977,6 @@ const app = {
     const ocrResultDiv = document.getElementById('ocrResult');
     const text = ocrResultDiv.innerText.trim();
 
-    if (!text || text === '(No text detected)' || text.includes(t('processing'))) {
-      this.showToast(t('noImage') + ' ' + t('ocrOrRunFirst'));
-      return;
-    }
-
     btn.disabled = true;
     btn.innerHTML = `<i data-lucide="loader" aria-hidden="true"></i> ${t('aiAnalyzing')}`;
     lucide.createIcons();
@@ -989,19 +984,29 @@ const app = {
     resultDiv.innerText = t('aiStarting');
 
     try {
-      const localResult = await aiEngine.analyzeLocal(text);
-      
-      let html = '';
-      if (aiEngine.isCloudAvailable()) {
-        html += `<span class="ai-tag">Cloud AI (Groq Llama 3.3 70B)</span>`;
-        const cloudResult = await aiEngine.analyzeCloud(text);
-        if (cloudResult.fullAnalysis) {
-          html += `<div style="margin-top: 8px; white-space: pre-wrap; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 12px;">${this.escapeHtml(cloudResult.fullAnalysis)}</div>`;
-        }
-        const structuredText = this.escapeHtml(JSON.stringify(localResult.structuredData, null, 2));
-        html += `<span class="ai-tag">Data Lokal</span><pre style="font-size: 12px; white-space: pre-wrap; margin-top: 4px; color: var(--color-text-secondary);">${structuredText}</pre>`;
+      let analysis;
+      if (!text || text === '(No text detected)' || text.includes(t('processing'))) {
+        analysis = await aiEngine.analyzeCloud('No text found', this.canvas.toDataURL());
       } else {
-        html += `<div style="white-space: pre-wrap;">${this.escapeHtml(localResult.fullAnalysis)}</div>`;
+        const localResult = await aiEngine.analyzeLocal(text);
+        if (aiEngine.isCloudAvailable()) {
+          analysis = await aiEngine.analyzeCloud(text);
+          analysis.structuredData = localResult.structuredData;
+        } else {
+          analysis = localResult;
+        }
+      }
+
+      let html = '';
+      if (analysis.mode === 'CLOUD') {
+        html += `<span class="ai-tag">Cloud AI (Gemini)</span>`;
+        html += `<div style="margin-top: 8px; white-space: pre-wrap; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 12px;">${this.escapeHtml(analysis.fullAnalysis)}</div>`;
+        if (analysis.structuredData) {
+          const structuredText = this.escapeHtml(JSON.stringify(analysis.structuredData, null, 2));
+          html += `<span class="ai-tag">Data Lokal</span><pre style="font-size: 12px; white-space: pre-wrap; margin-top: 4px; color: var(--color-text-secondary);">${structuredText}</pre>`;
+        }
+      } else {
+        html += `<div style="white-space: pre-wrap;">${this.escapeHtml(analysis.fullAnalysis)}</div>`;
       }
       
       resultDiv.innerHTML = html;

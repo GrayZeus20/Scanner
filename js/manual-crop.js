@@ -6,15 +6,11 @@ const manualCrop = {
   canvas: null,
   
   state: {
-    dragging: false,
     resizing: false,
-    activeHandle: null,
+    activeCorner: null,
     startX: 0,
     startY: 0,
-    // Store individual corner positions (relative to wrapper)
-    corners: { tl: {x: 0, y: 0}, tr: {x: 0, y: 0}, bl: {x: 0, y: 0}, br: {x: 0, y: 0} },
-    minCornerDist: 20,
-    activeCorner: null
+    corners: { tl: {x: 0, y: 0}, tr: {x: 0, y: 0}, bl: {x: 0, y: 0}, br: {x: 0, y: 0} }
   },
 
   init() {
@@ -27,7 +23,6 @@ const manualCrop = {
     if (!this.area || this.initialized) return;
     this.initialized = true;
 
-    // Each corner handle moves independently
     this.area.querySelectorAll('.crop-handle').forEach(handle => {
       handle.addEventListener('mousedown', (e) => this.onCornerStart(e));
       handle.addEventListener('touchstart', (e) => this.onCornerStart(e), { passive: false });
@@ -50,6 +45,8 @@ const manualCrop = {
     this.state.activeCorner = handle.dataset.handle;
     this.state.startX = pos.x;
     this.state.startY = pos.y;
+
+    this.showMagnifier();
   },
 
   onMove(e) {
@@ -98,18 +95,6 @@ const manualCrop = {
     this.magnifier.style.display = 'none';
   },
 
-  updateMagnifier(x, y) {
-    if (!this.magnifier) return;
-    this.magnifier.style.left = (x + 16) + 'px';
-    this.magnifier.style.top = (y + 16) + 'px';
-    const src = this.canvas.toDataURL();
-    if (src) {
-      this.magnifier.style.backgroundImage = `url(${src})`;
-      this.magnifier.style.backgroundSize = `${this.canvas.width * 2}px ${this.canvas.height * 2}px`;
-      this.magnifier.style.backgroundPosition = `-${x * 2}px -${y * 2}px`;
-    }
-  },
-
   getPos(e) {
     if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
     return { x: e.clientX, y: e.clientY };
@@ -117,17 +102,22 @@ const manualCrop = {
 
   renderQuadrilateral() {
     const c = this.state.corners;
-    // Update the crop area polygon via clip-path
-    this.area.style.clipPath = `polygon(${c.tl.x}px ${c.tl.y}px, ${c.tr.x}px ${c.tr.y}px, ${c.br.x}px ${c.br.y}px, ${c.bl.x}px ${c.bl.y}px)`;
-    
-    // Position handles at corners
+    const areaLeft = this.area.offsetLeft;
+    const areaTop = this.area.offsetTop;
+
+    const txl = c.tl.x - areaLeft, tyl = c.tl.y - areaTop;
+    const txr = c.tr.x - areaLeft, tyr = c.tr.y - areaTop;
+    const bxr = c.br.x - areaLeft, byr = c.br.y - areaTop;
+    const bxl = c.bl.x - areaLeft, byl = c.bl.y - areaTop;
+
+    this.area.style.clipPath = `polygon(${txl}px ${tyl}px, ${txr}px ${tyr}px, ${bxr}px ${byr}px, ${bxl}px ${byl}px)`;
+
     const handles = this.area.querySelectorAll('.crop-handle');
     handles.forEach(h => {
       const key = h.dataset.handle;
       if (c[key]) {
-        h.style.position = 'absolute';
-        h.style.left = (c[key].x - this.area.offsetLeft - 14) + 'px';
-        h.style.top = (c[key].y - this.area.offsetTop - 14) + 'px';
+        h.style.left = (c[key].x - areaLeft - 14) + 'px';
+        h.style.top = (c[key].y - areaTop - 14) + 'px';
       }
     });
   },
@@ -157,29 +147,7 @@ const manualCrop = {
     this.area.style.height = ch + 'px';
     this.area.style.clipPath = '';
     
-    // Position handles absolutely within wrapper
-    this.area.querySelectorAll('.crop-handle').forEach(h => {
-      h.style.position = 'fixed';
-    });
-    
-    this.renderFixedHandles();
-  },
-
-  renderFixedHandles() {
-    const c = this.state.corners;
-    const wrapperRect = this.wrapper.getBoundingClientRect();
-    const handles = this.area.querySelectorAll('.crop-handle');
-    
-    handles.forEach(h => {
-      const key = h.dataset.handle;
-      if (c[key]) {
-        // Convert to fixed position on screen
-        const wrapperRect2 = this.wrapper.getBoundingClientRect();
-        h.style.position = 'fixed';
-        h.style.left = (wrapperRect2.left + c[key].x - 14) + 'px';
-        h.style.top = (wrapperRect2.top + c[key].y - 14) + 'px';
-      }
-    });
+    this.renderQuadrilateral();
   },
 
   getCropRect() {
@@ -199,10 +167,9 @@ const manualCrop = {
     };
   },
 
-  // Extract quadrilateral region from canvas and draw to new canvas
   cropQuadrilateral() {
     const srcCanvas = this.canvas;
-    const srcCtx = srcCanvas.getContext('2d');
+    const srcCtx = srcCanvas.getContext('2d', { willReadFrequently: true });
     const c = this.state.corners;
     const canvasRect = srcCanvas.getBoundingClientRect();
     const wrapperRect = this.wrapper.getBoundingClientRect();
@@ -211,7 +178,6 @@ const manualCrop = {
     const canvasLeft = canvasRect.left - wrapperRect.left;
     const canvasTop = canvasRect.top - wrapperRect.top;
 
-    // Convert corners to canvas pixel coordinates
     const pts = [
       { x: (c.tl.x - canvasLeft) * scaleX, y: (c.tl.y - canvasTop) * scaleY },
       { x: (c.tr.x - canvasLeft) * scaleX, y: (c.tr.y - canvasTop) * scaleY },
@@ -219,7 +185,6 @@ const manualCrop = {
       { x: (c.bl.x - canvasLeft) * scaleX, y: (c.bl.y - canvasTop) * scaleY }
     ];
 
-    // Bounding box
     const xs = pts.map(p => p.x);
     const ys = pts.map(p => p.y);
     const minX = Math.max(0, Math.min(...xs));
@@ -232,7 +197,6 @@ const manualCrop = {
     
     if (w < 10 || h < 10) return null;
 
-    // Use bounding box crop for simplicity (perspective warp requires WebGL)
     const imageData = srcCtx.getImageData(minX, minY, w, h);
     const outCanvas = document.createElement('canvas');
     outCanvas.width = w;
