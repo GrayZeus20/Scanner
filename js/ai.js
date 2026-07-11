@@ -1,11 +1,7 @@
 const aiEngine = {
-  getApiKey() {
-    return localStorage.getItem('scanner.openai_key');
-  },
-
-  saveApiKey(key) {
-    localStorage.setItem('scanner.openai_key', key);
-  },
+  // Ganti URL ini dengan URL Cloudflare Worker Anda setelah deploy
+  _workerUrl: 'https://scanner-ai-proxy.<YOUR_ACCOUNT_ID>.workers.dev',
+  _useCloudProxy: true, // Set false jika ingin langsung ke Gemini (tidak disarankan)
 
   async analyzeLocal(text) {
     return new Promise(resolve => {
@@ -120,13 +116,8 @@ const aiEngine = {
   },
 
   async analyzeCloud(text) {
-    const apiKey = this.getApiKey();
-    if (!apiKey) {
-      throw new Error('API Key belum diatur. Silakan masukkan kunci di Pengaturan.');
-    }
-
     if (!navigator.onLine) {
-      throw new Error('Tidak ada koneksi internet. Gunakan analisis lokal yang tersedia tanpa perlu koneksi.');
+      throw new Error('Tidak ada koneksi internet.');
     }
 
     const prompt = `Analisis dokumen berikut secara mendalam. Berikan:
@@ -140,49 +131,36 @@ Teks: ${text}`;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15000);
 
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch(this._workerUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [{ role: "user", content: prompt }]
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
         signal: controller.signal
       });
 
       clearTimeout(timeout);
 
       if (!response.ok) {
-        let errorMsg = 'Gagal menghubungi OpenAI.';
+        let errorMsg = 'Gagal menghubungi AI Service.';
         try {
           const err = await response.json();
-          errorMsg = err.error?.message || errorMsg;
+          errorMsg = err.error || errorMsg;
         } catch (_) {}
-        // If it's an auth error, provide guidance
-        if (response.status === 401) {
-          errorMsg += ' Periksa API Key Anda di Pengaturan. Kunci disimpan di browser Anda secara lokal.';
-        }
         throw new Error(errorMsg);
       }
 
       const data = await response.json();
-      const resultText = data.choices[0].message.content;
+      const resultText = data.text || 'Tidak ada respon dari AI.';
 
       return {
         mode: 'CLOUD',
-        type: 'Analisis Cerdas',
-        summary: 'Hasil analisis mendalam dari AI.',
+        type: 'Analisis Gemini AI',
+        summary: 'Hasil analisis mendalam dari Google Gemini.',
         fullAnalysis: resultText
       };
     } catch (error) {
       if (error.name === 'AbortError') {
-        throw new Error('Permintaan ke OpenAI kehabisan waktu. Coba gunakan analisis lokal yang lebih cepat.');
-      }
-      if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
-        throw new Error('Gagal terhubung ke OpenAI. Periksa koneksi internet Anda atau gunakan analisis lokal.');
+        throw new Error('Permintaan ke AI kehabisan waktu. Coba gunakan analisis lokal.');
       }
       throw error;
     }

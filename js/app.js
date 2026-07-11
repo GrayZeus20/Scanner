@@ -177,25 +177,6 @@ const app = {
 
     document.getElementById('aiAnalyzeBtn').addEventListener('click', () => this.runAiAnalysis());
 
-    document.getElementById('settingsBtn').addEventListener('click', () => {
-      document.getElementById('apiKeyInput').value = aiEngine.getApiKey() || '';
-      this.toggleSheet('settingsSheet', true);
-      lucide.createIcons();
-    });
-    document.getElementById('closeSettings').addEventListener('click', () => {
-      this.toggleSheet('settingsSheet', false);
-    });
-    document.getElementById('saveSettings').addEventListener('click', () => {
-      const key = document.getElementById('apiKeyInput').value.trim();
-      if (key) {
-        aiEngine.saveApiKey(key);
-        this.toggleSheet('settingsSheet', false);
-        this.showToast(t('apiKeySaved'));
-      } else {
-        this.showToast(t('apiKeyEnter'));
-      }
-    });
-
     this.initFilterControls();
     this.initExportButtons();
     this.initZoomControls();
