@@ -1,20 +1,45 @@
 const edgeDetection = {
   detectAndCrop(canvas, ctx) {
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const origW = canvas.width;
+    const origH = canvas.height;
+    const MAX_WORK = 800;
+    const scale = Math.min(1, MAX_WORK / Math.max(origW, origH));
+
+    const workCanvas = document.createElement('canvas');
+    workCanvas.width = Math.round(origW * scale);
+    workCanvas.height = Math.round(origH * scale);
+    const workCtx = workCanvas.getContext('2d');
+    workCtx.drawImage(canvas, 0, 0, workCanvas.width, workCanvas.height);
+
+    const imageData = workCtx.getImageData(0, 0, workCanvas.width, workCanvas.height);
     const data = imageData.data;
-    const w = canvas.width;
-    const h = canvas.height;
+    const w = workCanvas.width;
+    const h = workCanvas.height;
 
     const gray = this.toGrayscale(data);
     const blurred = this.gaussianBlur(gray, w, h);
     const edges = this.sobel(blurred, w, h);
-    const cropRect = this.findLargestRect(edges, w, h);
+    const threshold = this.adaptiveThreshold(edges, w, h);
 
-    if (cropRect) {
-      this.cropCanvas(canvas, ctx, cropRect);
-      return true;
+    let cropRect = this.findLargestRect(edges, w, h, threshold);
+
+    if (!cropRect && threshold > 15) {
+      cropRect = this.findLargestRect(edges, w, h, Math.max(10, threshold * 0.5));
     }
-    return false;
+
+    if (!cropRect) {
+      return false;
+    }
+
+    const invScale = 1 / scale;
+    const padding = 10;
+    const cropX = Math.max(0, Math.round(cropRect.x * invScale) - padding);
+    const cropY = Math.max(0, Math.round(cropRect.y * invScale) - padding);
+    const cropW = Math.min(origW - cropX, Math.round(cropRect.w * invScale) + padding * 2);
+    const cropH = Math.min(origH - cropY, Math.round(cropRect.h * invScale) + padding * 2);
+
+    this.cropCanvas(canvas, ctx, { x: cropX, y: cropY, w: cropW, h: cropH });
+    return true;
   },
 
   toGrayscale(data) {
@@ -66,8 +91,28 @@ const edgeDetection = {
     return edges;
   },
 
-  findLargestRect(edges, w, h) {
-    const threshold = 30;
+  adaptiveThreshold(edges, w, h) {
+    let sum = 0;
+    let count = 0;
+    for (let i = 0; i < edges.length; i++) {
+      if (edges[i] > 0) {
+        sum += edges[i];
+        count++;
+      }
+    }
+    if (count === 0) return 30;
+    const mean = sum / count;
+    let variance = 0;
+    for (let i = 0; i < edges.length; i++) {
+      if (edges[i] > 0) {
+        variance += (edges[i] - mean) * (edges[i] - mean);
+      }
+    }
+    variance /= count;
+    return Math.max(15, Math.min(60, mean + Math.sqrt(variance) * 0.5));
+  },
+
+  findLargestRect(edges, w, h, threshold) {
     let minX = w, minY = h, maxX = 0, maxY = 0;
     let found = false;
 
@@ -85,12 +130,7 @@ const edgeDetection = {
 
     if (!found) return null;
 
-    const padding = 10;
-    const cropX = Math.max(0, minX - padding);
-    const cropY = Math.max(0, minY - padding);
-    const cropW = Math.max(1, Math.min(w - cropX, maxX - minX + padding * 2));
-    const cropH = Math.max(1, Math.min(h - cropY, maxY - minY + padding * 2));
-    return { x: cropX, y: cropY, w: cropW, h: cropH };
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   },
 
   cropCanvas(canvas, ctx, rect) {

@@ -1028,6 +1028,44 @@ select:focus-visible,
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
+.api-key-notice {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+  margin-top: -4px;
+}
+
+/* ─── OCR Progress Bar ──────────────────────────────────────────── */
+.ocr-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ocr-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--color-muted);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ocr-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--color-accent);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+.ocr-progress-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  min-width: 36px;
+  text-align: right;
+}
+
 /* ─── Manual Crop Overlay (CamScanner-style) ─────────────────── */
 .crop-overlay {
   position: absolute;
@@ -1067,7 +1105,7 @@ select:focus-visible,
   height: 28px;
   background: white;
   border-radius: 50%;
-  border: 3px solid var(--accent);
+  border: 3px solid var(--color-accent);
   z-index: 22;
   touch-action: none;
 }
@@ -1080,7 +1118,7 @@ select:focus-visible,
   transform: translate(-50%, -50%);
   width: 8px;
   height: 8px;
-  background: var(--accent);
+  background: var(--color-accent);
   border-radius: 50%;
 }
 
@@ -1094,7 +1132,7 @@ select:focus-visible,
   width: 120px;
   height: 120px;
   border-radius: 50%;
-  border: 3px solid var(--accent);
+  border: 3px solid var(--color-accent);
   background-repeat: no-repeat;
   pointer-events: none;
   z-index: 30;
@@ -1255,4 +1293,46 @@ button:active, .nav-btn:active {
   body {
     background: var(--color-muted);
   }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    /* (This would ideally import dark-mode.css vars or be defined here) */
+  }
+}
+
+/* ─── Flash/Torch Button ─────────────────────────────────────── */
+.flash-btn {
+  position: absolute;
+  top: calc(24px + var(--safe-top, 0px));
+  right: 24px;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  border: none;
+  background: rgba(0, 0, 0, 0.35);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 25;
+  transition: background 0.2s, transform 0.15s;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  touch-action: manipulation;
+}
+
+.flash-btn:active {
+  transform: scale(0.9);
+}
+
+.flash-btn.active {
+  background: rgba(255, 193, 7, 0.85);
+  color: #000;
+}
+
+.flash-btn i {
+  width: 22px;
+  height: 22px;
 }

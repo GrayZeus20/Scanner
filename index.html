@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" id="htmlRoot">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -20,7 +20,7 @@
     <header id="header">
       <div class="header-left">
         <div class="logo">
-          <i data-lucide="scan-eye" class="logo-icon"></i>
+          <i data-lucide="scan-eye" class="logo-icon" aria-hidden="true"></i>
           <span class="logo-text" data-i18n="appName">WebScanner</span>
         </div>
       </div>
@@ -29,11 +29,11 @@
             <option value="id">🇮🇩 Indonesia</option>
             <option value="en">🇬🇧 English</option>
           </select>
-          <button id="settingsBtn" class="icon-btn" title="Settings">
-            <i data-lucide="settings"></i>
+          <button id="settingsBtn" class="icon-btn" aria-label="Settings">
+            <i data-lucide="settings" aria-hidden="true"></i>
           </button>
-          <button id="darkToggle" class="icon-btn" title="Toggle Dark Mode">
-            <i data-lucide="moon"></i>
+          <button id="darkToggle" class="icon-btn" aria-label="Toggle Dark Mode">
+            <i data-lucide="moon" aria-hidden="true"></i>
           </button>
         </div>
     </header>
@@ -44,7 +44,7 @@
       <div id="historyView" class="hidden">
         <div class="history-header">
           <h3 data-i18n="history">Riwayat Scan</h3>
-          <button id="closeHistory" class="icon-btn"><i data-lucide="x"></i></button>
+          <button id="closeHistory" class="icon-btn" aria-label="Close History"><i data-lucide="x" aria-hidden="true"></i></button>
         </div>
         <div id="historyList" class="history-list"></div>
       </div>
@@ -52,16 +52,16 @@
       <!-- Preview Area -->
       <div id="previewArea">
         <div id="emptyState">
-          <i data-lucide="scan-eye" class="empty-icon"></i>
+          <i data-lucide="scan-eye" class="empty-icon" aria-hidden="true"></i>
           <h2 data-i18n="emptyTitle">Belum ada dokumen</h2>
           <p data-i18n="emptyDesc">Ambil foto atau impor gambar untuk memulai</p>
           <div class="empty-actions">
             <button id="emptyCamera" class="btn btn-primary">
-              <i data-lucide="camera"></i>
+              <i data-lucide="camera" aria-hidden="true"></i>
               <span data-i18n="takePhoto">Ambil Foto</span>
             </button>
             <button id="emptyImport" class="btn btn-secondary">
-              <i data-lucide="upload"></i>
+              <i data-lucide="upload" aria-hidden="true"></i>
               <span data-i18n="importFile">Impor File</span>
             </button>
           </div>
@@ -69,25 +69,25 @@
         <div id="editorArea" class="hidden">
           <div class="pages-tray" id="pagesTray"></div>
           <div class="canvas-wrapper" id="canvasWrapper">
-            <canvas id="mainCanvas"></canvas>
+            <canvas id="mainCanvas" aria-label="Document Canvas"></canvas>
             <!-- Manual Crop Overlay (CamScanner-style) -->
             <div id="cropOverlay" class="crop-overlay hidden">
               <div id="cropArea" class="crop-area">
-                <div class="crop-grid"></div>
-                <div class="crop-handle" data-handle="tl"></div>
-                <div class="crop-handle" data-handle="tr"></div>
-                <div class="crop-handle" data-handle="bl"></div>
-                <div class="crop-handle" data-handle="br"></div>
-                <div class="crop-magnifier" id="cropMagnifier"></div>
+                <div class="crop-grid" aria-hidden="true"></div>
+                <div class="crop-handle" data-handle="tl" aria-label="Resize Top Left"></div>
+                <div class="crop-handle" data-handle="tr" aria-label="Resize Top Right"></div>
+                <div class="crop-handle" data-handle="bl" aria-label="Resize Bottom Left"></div>
+                <div class="crop-handle" data-handle="br" aria-label="Resize Bottom Right"></div>
+                <div class="crop-magnifier" id="cropMagnifier" aria-hidden="true"></div>
               </div>
             </div>
             <!-- Crop Action Bar -->
             <div id="cropActionBar" class="crop-action-bar hidden">
-              <button id="cancelCropBtn" class="crop-action-btn crop-cancel">
-                <i data-lucide="x"></i>
+              <button id="cancelCropBtn" class="crop-action-btn crop-cancel" aria-label="Cancel">
+                <i data-lucide="x" aria-hidden="true"></i>
               </button>
-              <button id="confirmCropBtn" class="crop-action-btn crop-confirm">
-                <i data-lucide="check"></i>
+              <button id="confirmCropBtn" class="crop-action-btn crop-confirm" aria-label="Confirm">
+                <i data-lucide="check" aria-hidden="true"></i>
               </button>
             </div>
           </div>
@@ -98,87 +98,93 @@
       <!-- Camera View -->
       <div id="cameraView" class="hidden">
         <video id="video" autoplay playsinline></video>
+        <button id="flashToggle" class="flash-btn hidden" aria-label="Toggle Flash">
+          <i data-lucide="zap-off" aria-hidden="true"></i>
+        </button>
         <div class="camera-overlay">
-          <div class="frame-guide"></div>
-          <div id="focusIndicator" class="focus-indicator hidden"></div>
+          <div class="frame-guide" aria-hidden="true"></div>
+          <div id="focusIndicator" class="focus-indicator hidden" aria-hidden="true"></div>
         </div>
         <div class="camera-controls">
-          <button id="finishCamera" class="camera-action-btn success-btn">
-            <i data-lucide="check"></i>
+          <button id="finishCamera" class="camera-action-btn success-btn" aria-label="Finish Capture">
+            <i data-lucide="check" aria-hidden="true"></i>
           </button>
-          <button id="captureBtn" class="capture-btn">
-            <i data-lucide="circle"></i>
+          <button id="captureBtn" class="capture-btn" aria-label="Capture Photo">
+            <i data-lucide="circle" aria-hidden="true"></i>
           </button>
-          <button id="cancelCamera" class="camera-action-btn danger-btn">
-            <i data-lucide="x"></i>
+          <button id="cancelCamera" class="camera-action-btn danger-btn" aria-label="Cancel Capture">
+            <i data-lucide="x" aria-hidden="true"></i>
+          </button>
+          <button id="cameraToggle" class="camera-action-btn" aria-label="Switch Camera">
+            <i data-lucide="camera-rotate" aria-hidden="true"></i>
           </button>
         </div>
       </div>
 
       <!-- Bottom Navigation -->
-      <nav id="bottomNav" class="hidden">
-        <button id="navHistory" class="nav-btn">
-          <i data-lucide="history"></i>
+      <nav id="bottomNav" class="hidden" role="navigation" aria-label="Main Navigation">
+        <button id="navHistory" class="nav-btn" role="tab" aria-selected="false">
+          <i data-lucide="history" aria-hidden="true"></i>
           <span data-i18n="history">Riwayat</span>
         </button>
-        <button id="navCamera" class="nav-btn">
-          <i data-lucide="camera"></i>
+        <button id="navCamera" class="nav-btn" role="tab" aria-selected="false">
+          <i data-lucide="camera" aria-hidden="true"></i>
           <span data-i18n="takePhoto">Ambil Foto</span>
         </button>
-        <button id="navImport" class="nav-btn">
-          <i data-lucide="upload"></i>
+        <button id="navImport" class="nav-btn" role="tab" aria-selected="false">
+          <i data-lucide="upload" aria-hidden="true"></i>
           <span data-i18n="importFile">Impor File</span>
         </button>
-        <button id="navTools" class="nav-btn">
-          <i data-lucide="settings-2"></i>
+        <button id="navTools" class="nav-btn" role="tab" aria-selected="false">
+          <i data-lucide="settings-2" aria-hidden="true"></i>
           <span data-i18n="tools">Alat</span>
         </button>
-        <button id="navExport" class="nav-btn">
-          <i data-lucide="download"></i>
+        <button id="navExport" class="nav-btn" role="tab" aria-selected="false">
+          <i data-lucide="download" aria-hidden="true"></i>
           <span data-i18n="export">Simpan</span>
         </button>
       </nav>
     </main>
 
     <!-- Tools Sheet Panel -->
-    <div id="toolsSheet" class="sheet-panel hidden">
+    <div id="toolsSheet" class="sheet-panel hidden" role="dialog" aria-modal="true" aria-label="Tools">
       <div class="sheet-header">
         <h3 data-i18n="tools">Alat</h3>
-        <button id="closeToolsSheet" class="icon-btn">
-          <i data-lucide="x"></i>
+        <button id="closeToolsSheet" class="icon-btn" data-i18n-aria="close">
+          <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </div>
       <div class="sheet-body">
         <button id="toolCropBtn" class="tool-action-btn">
-          <i data-lucide="crop"></i>
+          <i data-lucide="crop" aria-hidden="true"></i>
           <div>
             <strong data-i18n="autoCrop">Potong</strong>
-            <small>Pilih area potong secara manual</small>
+            <small data-i18n="cropDesc">Pilih area potong secara manual</small>
           </div>
         </button>
         <button id="toolFilterBtn" class="tool-action-btn">
-          <i data-lucide="sliders-horizontal"></i>
+          <i data-lucide="sliders-horizontal" aria-hidden="true"></i>
           <div>
             <strong data-i18n="filters">Filter</strong>
-            <small>Atur kecerahan, kontras, dll</small>
+            <small data-i18n="filterDesc">Atur kecerahan, kontras, dll</small>
           </div>
         </button>
         <button id="toolOcrBtn" class="tool-action-btn">
-          <i data-lucide="type"></i>
+          <i data-lucide="type" aria-hidden="true"></i>
           <div>
             <strong data-i18n="ocr">Teks (OCR)</strong>
-            <small>Ekstrak teks dari gambar</small>
+            <small data-i18n="ocrDesc">Ekstrak teks dari gambar</small>
           </div>
         </button>
       </div>
     </div>
 
     <!-- Filter Sheet Panel -->
-    <div id="filterSheet" class="sheet-panel hidden">
+    <div id="filterSheet" class="sheet-panel hidden" role="dialog" aria-modal="true" aria-label="Filters">
       <div class="sheet-header">
         <h3 data-i18n="filters">Filter</h3>
-        <button id="closeFilterSheet" class="icon-btn">
-          <i data-lucide="x"></i>
+        <button id="closeFilterSheet" class="icon-btn" data-i18n-aria="close">
+          <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </div>
       <div class="sheet-body">
@@ -238,95 +244,107 @@
         </div>
         <div class="filter-divider"></div>
         <div class="filter-row">
-          <button id="rotateLeftBtn" class="filter-action-btn">
-            <i data-lucide="rotate-ccw"></i>
+        <button id="rotateLeftBtn" class="filter-action-btn" aria-label="Rotate Left">
+            <i data-lucide="rotate-ccw" aria-hidden="true"></i>
             <span data-i18n="rotateLeft">Putar Kiri</span>
           </button>
-          <button id="rotateRightBtn" class="filter-action-btn">
-            <i data-lucide="rotate-cw"></i>
+          <button id="rotateRightBtn" class="filter-action-btn" aria-label="Rotate Right">
+            <i data-lucide="rotate-cw" aria-hidden="true"></i>
             <span data-i18n="rotateRight">Putar Kanan</span>
           </button>
-          <button id="flipHBtn" class="filter-action-btn">
-            <i data-lucide="flip-horizontal"></i>
+          <button id="flipHBtn" class="filter-action-btn" aria-label="Flip Horizontal">
+            <i data-lucide="flip-horizontal" aria-hidden="true"></i>
             <span data-i18n="flipH">Balik H</span>
           </button>
-          <button id="flipVBtn" class="filter-action-btn">
-            <i data-lucide="flip-vertical"></i>
+          <button id="flipVBtn" class="filter-action-btn" aria-label="Flip Vertical">
+            <i data-lucide="flip-vertical" aria-hidden="true"></i>
             <span data-i18n="flipV">Balik V</span>
           </button>
         </div>
         <div class="filter-divider"></div>
         <button id="resetFilterBtn" class="btn btn-danger">
-          <i data-lucide="rotate-ccw"></i>
+          <i data-lucide="rotate-ccw" aria-hidden="true"></i>
           <span data-i18n="resetFilter">Reset Filter</span>
         </button>
       </div>
     </div>
 
     <!-- Settings Sheet -->
-    <div id="settingsSheet" class="sheet-panel hidden">
+    <div id="settingsSheet" class="sheet-panel hidden" role="dialog" aria-modal="true" aria-label="Settings">
       <div class="sheet-header">
         <h3 data-i18n="settings">Pengaturan AI</h3>
-        <button id="closeSettings" class="icon-btn"><i data-lucide="x"></i></button>
+        <button id="closeSettings" class="icon-btn" data-i18n-aria="close"><i data-lucide="x" aria-hidden="true"></i></button>
       </div>
       <div class="sheet-body">
         <div class="filter-group">
           <label>OpenAI API Key</label>
           <input type="password" id="apiKeyInput" class="api-key-input" placeholder="sk-...">
         </div>
-        <button id="saveSettings" class="btn btn-primary">Simpan</button>
+        <p class="api-key-notice" data-i18n="apiKeyNotice">Your key is stored locally and sent directly to OpenAI.</p>
+        <button id="saveSettings" class="btn btn-primary">
+          <i data-lucide="save" aria-hidden="true"></i>
+          <span data-i18n="save">Save</span>
+        </button>
       </div>
     </div>
 
     <!-- OCR Sheet Panel -->
-    <div id="ocrSheet" class="sheet-panel hidden">
+    <div id="ocrSheet" class="sheet-panel hidden" role="dialog" aria-modal="true" aria-label="OCR">
       <div class="sheet-header">
         <h3 data-i18n="ocr">Teks (OCR)</h3>
-        <button id="closeOcrSheet" class="icon-btn">
-          <i data-lucide="x"></i>
+        <button id="closeOcrSheet" class="icon-btn" data-i18n-aria="close">
+          <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </div>
       <div class="sheet-body">
-        <div id="ocrResult" class="ocr-result" contenteditable="true">
-          <p style="color: var(--color-text-secondary)"><i data-lucide="loader"></i> <span data-i18n="processing">Memproses...</span></p>
+        <div id="ocrProgress" class="ocr-progress hidden">
+          <div class="ocr-progress-bar"><div id="ocrProgressBar" class="ocr-progress-fill"></div></div>
+          <span id="ocrProgressText" class="ocr-progress-text">0%</span>
+        </div>
+        <div id="ocrResult" class="ocr-result" contenteditable="true" aria-label="OCR Result">
+          <p style="color: var(--color-text-secondary)"><i data-lucide="loader" aria-hidden="true"></i> <span data-i18n="processing">Memproses...</span></p>
         </div>
         <button id="copyOcrBtn" class="btn btn-primary">
-          <i data-lucide="copy"></i>
+          <i data-lucide="copy" aria-hidden="true"></i>
           <span data-i18n="copyText">Salin Teks</span>
         </button>
         <button id="aiAnalyzeBtn" class="btn btn-secondary">
-          <i data-lucide="sparkles"></i>
-          <span>Analisis AI</span>
+          <i data-lucide="sparkles" aria-hidden="true"></i>
+          <span data-i18n="aiAnalyze">Analisis AI</span>
+        </button>
+        <button id="cancelOcrBtn" class="btn btn-danger hidden">
+          <i data-lucide="x" aria-hidden="true"></i>
+          <span data-i18n="cancel">Batal</span>
         </button>
         <div id="aiResultArea" class="ocr-result hidden"></div>
       </div>
     </div>
 
     <!-- Export Sheet Panel -->
-    <div id="exportSheet" class="sheet-panel hidden">
+    <div id="exportSheet" class="sheet-panel hidden" role="dialog" aria-modal="true" aria-label="Export">
       <div class="sheet-header">
         <h3 data-i18n="export">Simpan</h3>
-        <button id="closeExportSheet" class="icon-btn">
-          <i data-lucide="x"></i>
+        <button id="closeExportSheet" class="icon-btn" data-i18n-aria="close">
+          <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </div>
       <div class="sheet-body">
         <button class="export-btn" data-format="pdf">
-          <i data-lucide="file-text"></i>
+          <i data-lucide="file-text" aria-hidden="true"></i>
           <div>
             <strong data-i18n="exportPdf">PDF</strong>
             <small data-i18n="exportPdfDesc">Simpan sebagai dokumen PDF</small>
           </div>
         </button>
         <button class="export-btn" data-format="png">
-          <i data-lucide="image"></i>
+          <i data-lucide="image" aria-hidden="true"></i>
           <div>
             <strong data-i18n="exportPng">PNG</strong>
             <small data-i18n="exportPngDesc">Gambar berkualitas tinggi</small>
           </div>
         </button>
         <button class="export-btn" data-format="jpg">
-          <i data-lucide="image"></i>
+          <i data-lucide="image" aria-hidden="true"></i>
           <div>
             <strong data-i18n="exportJpg">JPG</strong>
             <small data-i18n="exportJpgDesc">Ukuran file lebih kecil</small>

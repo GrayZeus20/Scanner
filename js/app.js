@@ -1,6 +1,6 @@
 const app = {
   state: {
-    pages: [], // Array of { originalImage, currentImageData }
+    pages: [],
     currentPageIndex: -1,
     lang: 'id',
     darkMode: false,
@@ -16,16 +16,37 @@ const app = {
       bw: false,
       threshold: 128
     },
-    rotation: 0
+    rotation: 0,
+    ocrAborted: false
   },
 
   canvas: document.getElementById('mainCanvas'),
   ctx: document.getElementById('mainCanvas').getContext('2d'),
 
   setActiveNav(id) {
-    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.classList.remove('active');
+      btn.setAttribute('aria-selected', 'false');
+    });
     const btn = document.getElementById(id);
-    if (btn) btn.classList.add('active');
+    if (btn) {
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+    }
+  },
+
+  toggleSheet(id, show) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (show) {
+      el.classList.remove('hidden');
+      el.setAttribute('aria-hidden', 'false');
+      el.setAttribute('aria-expanded', 'true');
+    } else {
+      el.classList.add('hidden');
+      el.setAttribute('aria-hidden', 'true');
+      el.setAttribute('aria-expanded', 'false');
+    }
   },
 
   escapeHtml(value) {
@@ -42,6 +63,8 @@ const app = {
     const savedMode = localStorage.getItem('scanner.darkMode');
     if (savedMode !== null) {
       this.state.darkMode = savedMode === 'true';
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      this.state.darkMode = true;
     }
 
     this.state.lang = detectLanguage();
@@ -54,12 +77,13 @@ const app = {
     storage.init().catch(console.warn);
 
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(console.warn);
+      navigator.serviceWorker.register('sw.js').catch(console.warn);
     }
   },
 
   initEventListeners() {
     document.getElementById('langSwitcher').addEventListener('change', (e) => {
+      this.state.lang = e.target.value;
       setLanguage(e.target.value);
     });
 
@@ -104,61 +128,65 @@ const app = {
     });
 
     document.getElementById('navTools').addEventListener('click', () => {
-      document.getElementById('toolsSheet').classList.remove('hidden');
+      this.toggleSheet('toolsSheet', true);
       lucide.createIcons();
     });
-    document.getElementById('closeToolsSheet').addEventListener('click', () => document.getElementById('toolsSheet').classList.add('hidden'));
+    document.getElementById('closeToolsSheet').addEventListener('click', () => this.toggleSheet('toolsSheet', false));
 
     document.getElementById('toolCropBtn').addEventListener('click', () => {
       this.startManualCrop();
-      document.getElementById('toolsSheet').classList.add('hidden');
+      this.toggleSheet('toolsSheet', false);
     });
     document.getElementById('confirmCropBtn').addEventListener('click', () => this.confirmManualCrop());
     document.getElementById('cancelCropBtn').addEventListener('click', () => this.cancelManualCrop());
     document.getElementById('toolFilterBtn').addEventListener('click', () => {
-      document.getElementById('filterSheet').classList.remove('hidden');
-      document.getElementById('toolsSheet').classList.add('hidden');
+      this.toggleSheet('filterSheet', true);
+      this.toggleSheet('toolsSheet', false);
       lucide.createIcons();
     });
     document.getElementById('toolOcrBtn').addEventListener('click', () => {
       this.startOcr();
-      document.getElementById('toolsSheet').classList.add('hidden');
+      this.toggleSheet('toolsSheet', false);
     });
 
-    document.getElementById('closeFilterSheet').addEventListener('click', () => document.getElementById('filterSheet').classList.add('hidden'));
-    document.getElementById('closeOcrSheet').addEventListener('click', () => document.getElementById('ocrSheet').classList.add('hidden'));
+    document.getElementById('closeFilterSheet').addEventListener('click', () => this.toggleSheet('filterSheet', false));
+    document.getElementById('closeOcrSheet').addEventListener('click', () => {
+      this.cancelOcr();
+      this.toggleSheet('ocrSheet', false);
+    });
+    document.getElementById('cancelOcrBtn').addEventListener('click', () => {
+      this.cancelOcr();
+    });
 
     document.getElementById('navExport').addEventListener('click', () => {
-      document.getElementById('exportSheet').classList.remove('hidden');
+      this.toggleSheet('exportSheet', true);
       lucide.createIcons();
     });
-    document.getElementById('closeExportSheet').addEventListener('click', () => document.getElementById('exportSheet').classList.add('hidden'));
+    document.getElementById('closeExportSheet').addEventListener('click', () => this.toggleSheet('exportSheet', false));
 
     document.getElementById('copyOcrBtn').addEventListener('click', () => {
       const text = document.getElementById('ocrResult').innerText;
       navigator.clipboard.writeText(text).then(() => this.showToast(t('saved')));
     });
 
-    // AI Analysis
     document.getElementById('aiAnalyzeBtn').addEventListener('click', () => this.runAiAnalysis());
 
-    // Settings
     document.getElementById('settingsBtn').addEventListener('click', () => {
       document.getElementById('apiKeyInput').value = aiEngine.getApiKey() || '';
-      document.getElementById('settingsSheet').classList.remove('hidden');
+      this.toggleSheet('settingsSheet', true);
       lucide.createIcons();
     });
     document.getElementById('closeSettings').addEventListener('click', () => {
-      document.getElementById('settingsSheet').classList.add('hidden');
+      this.toggleSheet('settingsSheet', false);
     });
     document.getElementById('saveSettings').addEventListener('click', () => {
       const key = document.getElementById('apiKeyInput').value.trim();
       if (key) {
         aiEngine.saveApiKey(key);
-        document.getElementById('settingsSheet').classList.add('hidden');
-        this.showToast('API Key tersimpan');
+        this.toggleSheet('settingsSheet', false);
+        this.showToast(t('apiKeySaved'));
       } else {
-        this.showToast('Masukkan API Key');
+        this.showToast(t('apiKeyEnter'));
       }
     });
 
@@ -175,7 +203,7 @@ const app = {
   syncDarkModeUI() {
     const darkToggle = document.getElementById('darkToggle');
     if (darkToggle) {
-      darkToggle.innerHTML = `<i data-lucide="${this.state.darkMode ? 'sun' : 'moon'}"></i>`;
+      darkToggle.innerHTML = `<i data-lucide="${this.state.darkMode ? 'sun' : 'moon'}" aria-hidden="true"></i>`;
     }
     document.body.classList.toggle('dark-mode', this.state.darkMode);
     lucide.createIcons();
@@ -213,7 +241,6 @@ const app = {
       this.state.pages.push(page);
       this.state.currentPageIndex = this.state.pages.length - 1;
       
-      // Show editor immediately so buttons appear even if rendering is slow
       this.showEditor();
       this.updatePagesTray();
       
@@ -243,14 +270,12 @@ const app = {
       h = Math.floor(h * ratio);
     }
     
-    // Scale for High DPI
     const dpr = window.devicePixelRatio || 1;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
     
-    // Store logical dimensions for other functions
     this.state.canvasWidth = w;
     this.state.canvasHeight = h;
     
@@ -276,10 +301,10 @@ const app = {
       const thumb = document.createElement('div');
       thumb.className = `page-thumb ${idx === this.state.currentPageIndex ? 'active' : ''}`;
       
-      // Thumbnail image if available
       if (page.originalImage) {
         const img = document.createElement('img');
         img.src = page.originalImage.src;
+        img.alt = t('appName') + ' page ' + (idx + 1);
         thumb.appendChild(img);
       } else {
         thumb.innerHTML = `<span>${idx + 1}</span>`;
@@ -304,7 +329,6 @@ const app = {
 
     Object.entries(sliderMap).forEach(([id, key]) => {
       const slider = document.getElementById(id);
-      const valSpan = document.getElementById(id.replace('filter', '').replace('Val', 'Val') || id + 'Val');
       const valMap = {
         filterBrightness: 'brightnessVal',
         filterContrast: 'contrastVal',
@@ -356,13 +380,11 @@ const app = {
         const format = btn.dataset.format;
         const canvas = this.canvas;
         if (format === 'pdf') {
-          // Export all pages in the current session to one PDF
           const pagesCanvases = this.state.pages.map(page => {
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = canvas.width;
             tempCanvas.height = canvas.height;
             const tempCtx = tempCanvas.getContext('2d');
-            // Redraw page with filters applied
             tempCtx.filter = [
               `brightness(${100 + this.state.filters.brightness}%)`,
               `contrast(${100 + this.state.filters.contrast}%)`,
@@ -370,7 +392,6 @@ const app = {
               this.state.filters.grayscale ? 'grayscale(100%)' : '',
             ].filter(Boolean).join(' ');
             tempCtx.drawImage(page.originalImage, 0, 0);
-            // B&W Threshold needs manual pixel processing
             if (this.state.filters.bw) {
               const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
               const data = imageData.data;
@@ -404,7 +425,7 @@ const app = {
             }
           });
         }
-        document.getElementById('exportSheet').classList.add('hidden');
+        this.toggleSheet('exportSheet', false);
       });
     });
   },
@@ -419,7 +440,6 @@ const app = {
     const ctx = this.ctx;
     const img = page.originalImage;
 
-    // Use logical dimensions for drawing
     const w = this.state.canvasWidth;
     const h = this.state.canvasHeight;
 
@@ -490,7 +510,7 @@ const app = {
       this.showToast(t('noImage'));
       return;
     }
-    this.showToast("Seret sudut untuk memotong");
+    this.showToast(t('cropInstruction'));
     
     const overlay = document.getElementById('cropOverlay');
     const actionBar = document.getElementById('cropActionBar');
@@ -498,17 +518,30 @@ const app = {
     actionBar.classList.remove('hidden');
     this.state.isCropping = true;
     
-    // Initialize crop area to canvas size
     manualCrop.resetCropArea();
     manualCrop.init();
   },
 
   confirmManualCrop() {
-    const rect = manualCrop.getCropRect();
+    const result = manualCrop.getCropResult();
+
+    if (result.quad) {
+      this.applyQuadCrop(result.quad);
+    } else if (result.rect) {
+      this.applyRectCrop(result.rect);
+    } else {
+      this.showToast(t('cropTooSmall'));
+      return;
+    }
+
+    this.cancelManualCrop();
+  },
+
+  applyRectCrop(rect) {
     const canvas = this.canvas;
 
     if (!rect || rect.width < 10 || rect.height < 10) {
-      this.showToast("Area potong terlalu kecil");
+      this.showToast(t('cropTooSmall'));
       return;
     }
 
@@ -534,14 +567,65 @@ const app = {
       console.error("Crop error:", err);
       this.showToast(t('error'));
     }
+  },
 
-    this.cancelManualCrop();
+  applyQuadCrop(quad) {
+    try {
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d');
+
+      const minX = Math.min(quad.tl.x, quad.bl.x, quad.tr.x, quad.br.x);
+      const minY = Math.min(quad.tl.y, quad.tr.y, quad.bl.y, quad.br.y);
+      const maxX = Math.max(quad.tl.x, quad.bl.x, quad.tr.x, quad.br.x);
+      const maxY = Math.max(quad.tl.y, quad.tr.y, quad.bl.y, quad.br.y);
+      const w = maxX - minX;
+      const h = maxY - minY;
+
+      if (w < 10 || h < 10) {
+        this.showToast(t('cropTooSmall'));
+        return;
+      }
+
+      tempCanvas.width = w;
+      tempCanvas.height = h;
+
+      tempCtx.beginPath();
+      tempCtx.moveTo(quad.tl.x - minX, quad.tl.y - minY);
+      tempCtx.lineTo(quad.tr.x - minX, quad.tr.y - minY);
+      tempCtx.lineTo(quad.br.x - minX, quad.br.y - minY);
+      tempCtx.lineTo(quad.bl.x - minX, quad.bl.y - minY);
+      tempCtx.closePath();
+      tempCtx.clip();
+
+      tempCtx.drawImage(this.canvas, -minX, -minY);
+
+      this.canvas.width = w;
+      this.canvas.height = h;
+      this.ctx.drawImage(tempCanvas, 0, 0);
+
+      this.state.canvasWidth = w;
+      this.state.canvasHeight = h;
+      this.state.currentImageData = this.ctx.getImageData(0, 0, w, h);
+      this.state.imageLoaded = true;
+      this.showToast(t('cropSuccess'));
+
+      const croppedImage = new Image();
+      croppedImage.src = this.canvas.toDataURL();
+      croppedImage.onload = () => {
+        this.setCurrentPageImage(croppedImage);
+        this.applyFilters();
+      };
+    } catch (err) {
+      console.error("Quad crop error:", err);
+      this.showToast(t('error'));
+    }
   },
 
   cancelManualCrop() {
     document.getElementById('cropOverlay')?.classList.add('hidden');
     document.getElementById('cropActionBar')?.classList.add('hidden');
     this.state.isCropping = false;
+    manualCrop.hideMagnifier();
   },
 
   autoCrop() {
@@ -673,14 +757,14 @@ const app = {
         const item = document.createElement('div');
         item.className = 'history-item';
         item.innerHTML = `
-          <img src="${scan.image}" alt="${scan.name}">
+          <img src="${scan.image}" alt="${this.escapeHtml(scan.name)}">
           <div class="history-meta">
-            <span>${scan.name}</span><br>
+            <span>${this.escapeHtml(scan.name)}</span><br>
             <small>${new Date(scan.timestamp).toLocaleString()}</small>
           </div>
           <div class="history-actions">
-            <button data-action="load"><i data-lucide="file-edit"></i></button>
-            <button data-action="delete"><i data-lucide="trash-2"></i></button>
+            <button data-action="load" aria-label="${t('loadScan')}"><i data-lucide="file-edit" aria-hidden="true"></i></button>
+            <button data-action="delete" aria-label="${t('deleteScan')}"><i data-lucide="trash-2" aria-hidden="true"></i></button>
           </div>
         `;
         item.querySelector('[data-action="load"]').addEventListener('click', (e) => {
@@ -690,7 +774,9 @@ const app = {
         });
         item.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
           e.stopPropagation();
-          storage.deleteScan(scan.id).then(() => this.showHistory());
+          if (confirm(t('confirmDelete'))) {
+            storage.deleteScan(scan.id).then(() => this.showHistory());
+          }
         });
         historyList.appendChild(item);
       });
@@ -707,17 +793,17 @@ const app = {
     if (existing) existing.remove();
     const toast = document.createElement('div');
     toast.className = 'toast';
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'polite');
     toast.textContent = message;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 2000);
   },
 
   async autoEnhance() {
-    // Apply default sharpening for scanning clarity
     this.state.filters.sharpness = 30;
     this.state.filters.contrast = 20;
     
-    // Update UI sliders if they exist
     const sharpnessSlider = document.getElementById('filterSharpness');
     if (sharpnessSlider) {
       sharpnessSlider.value = 30;
@@ -738,23 +824,20 @@ const app = {
     const ocrResultDiv = document.getElementById('ocrResult');
     const text = ocrResultDiv.innerText.trim();
 
-    const processingText = t('processing');
-    if (!text || text === '(No text detected)' || text.includes(processingText)) {
-      this.showToast(t('noImage') + ' atau jalankan OCR terlebih dahulu');
+    if (!text || text === '(No text detected)' || text.includes(t('processing'))) {
+      this.showToast(t('noImage') + ' ' + t('ocrOrRunFirst'));
       return;
     }
 
     btn.disabled = true;
-    btn.innerHTML = `<i data-lucide="loader"></i> Analisis...`;
+    btn.innerHTML = `<i data-lucide="loader" aria-hidden="true"></i> ${t('aiAnalyzing')}`;
     lucide.createIcons();
     resultDiv.classList.remove('hidden');
-    resultDiv.innerText = 'Memulai analisis...';
+    resultDiv.innerText = t('aiStarting');
 
     try {
-      // 1. LOCAL AI (Fast, Private & Robust)
       const localResult = await aiEngine.analyzeLocal(text);
       
-      // 2. CLOUD AI (Optional Upgrade)
       let html = '';
       if (aiEngine.getApiKey()) {
         html += `<span class="ai-tag">Cloud AI (GPT-4o-mini)</span>`;
@@ -765,7 +848,6 @@ const app = {
         const structuredText = this.escapeHtml(JSON.stringify(localResult.structuredData, null, 2));
         html += `<span class="ai-tag">Data Lokal</span><pre style="font-size: 12px; white-space: pre-wrap; margin-top: 4px; color: var(--color-text-secondary);">${structuredText}</pre>`;
       } else {
-        // Full Local Experience
         html += `<div style="white-space: pre-wrap;">${this.escapeHtml(localResult.fullAnalysis)}</div>`;
       }
       
@@ -774,9 +856,29 @@ const app = {
       resultDiv.innerText = 'Error: ' + err.message;
     } finally {
       btn.disabled = false;
-      btn.innerHTML = `<i data-lucide="sparkles"></i> Analisis AI`;
+      btn.innerHTML = `<i data-lucide="sparkles" aria-hidden="true"></i> ${t('aiAnalyze')}`;
       lucide.createIcons();
     }
+  },
+
+  showOcrProgress(show) {
+    const progressEl = document.getElementById('ocrProgress');
+    const cancelBtn = document.getElementById('cancelOcrBtn');
+    if (show) {
+      progressEl?.classList.remove('hidden');
+      cancelBtn?.classList.remove('hidden');
+    } else {
+      progressEl?.classList.add('hidden');
+      cancelBtn?.classList.add('hidden');
+    }
+  },
+
+  updateOcrProgress(progress) {
+    const bar = document.getElementById('ocrProgressBar');
+    const text = document.getElementById('ocrProgressText');
+    const pct = Math.round(progress * 100);
+    if (bar) bar.style.width = pct + '%';
+    if (text) text.textContent = pct + '%';
   },
 
   async startOcr() {
@@ -785,20 +887,39 @@ const app = {
       return;
     }
 
-    document.getElementById('ocrSheet').classList.remove('hidden');
+    this.toggleSheet('ocrSheet', true);
     lucide.createIcons();
     const resultDiv = document.getElementById('ocrResult');
-    resultDiv.innerHTML = `<p><i data-lucide="loader"></i> ${t('processing')}</p>`;
+    resultDiv.innerHTML = `<p><i data-lucide="loader" aria-hidden="true"></i> ${t('ocrStarting')}</p>`;
     document.getElementById('aiResultArea').classList.add('hidden');
+    this.showOcrProgress(true);
+    this.updateOcrProgress(0);
+    this.state.ocrAborted = false;
     lucide.createIcons();
 
     try {
-      const text = await ocrEngine.recognize(this.canvas);
-      resultDiv.innerText = text || '(No text detected)';
-      this.showToast(t('ocrDone'));
+      const text = await ocrEngine.recognize(this.canvas, (progress) => {
+        this.updateOcrProgress(progress);
+      }, () => this.state.ocrAborted);
+      if (!this.state.ocrAborted) {
+        resultDiv.innerText = text || '(No text detected)';
+        this.showToast(t('ocrDone'));
+      }
     } catch (err) {
-      resultDiv.innerText = 'Error: ' + err.message;
+      if (this.state.ocrAborted) {
+        resultDiv.innerHTML = `<p style="color: var(--color-text-secondary)">${t('ocrCancelled')}</p>`;
+      } else {
+        resultDiv.innerText = 'Error: ' + err.message;
+      }
+    } finally {
+      this.showOcrProgress(false);
+      lucide.createIcons();
     }
+  },
+
+  cancelOcr() {
+    this.state.ocrAborted = true;
+    ocrEngine.abort();
   }
 };
 

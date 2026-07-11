@@ -4,7 +4,10 @@ const manualCrop = {
   magnifier: null,
   wrapper: null,
   canvas: null,
-  
+  _listenersBound: false,
+  _magnifierCache: null,
+  _magnifierCacheSize: 0,
+
   state: {
     dragging: false,
     resizing: false,
@@ -15,7 +18,8 @@ const manualCrop = {
     startTop: 0,
     startWidth: 0,
     startHeight: 0,
-    minSize: 40
+    minSize: 40,
+    mode: 'rect'
   },
 
   init() {
@@ -27,25 +31,24 @@ const manualCrop = {
 
     if (!this.area) return;
 
-    // Drag the entire crop area
     this.area.addEventListener('mousedown', (e) => this.onAreaStart(e));
     this.area.addEventListener('touchstart', (e) => this.onAreaStart(e), { passive: false });
 
-    // Resize handles
     this.area.querySelectorAll('.crop-handle').forEach(handle => {
       handle.addEventListener('mousedown', (e) => this.onHandleStart(e));
       handle.addEventListener('touchstart', (e) => this.onHandleStart(e), { passive: false });
     });
 
-    // Global move/end
-    document.addEventListener('mousemove', (e) => this.onMove(e));
-    document.addEventListener('touchmove', (e) => this.onMove(e), { passive: false });
-    document.addEventListener('mouseup', () => this.onEnd());
-    document.addEventListener('touchend', () => this.onEnd());
+    if (!this._listenersBound) {
+      document.addEventListener('mousemove', (e) => this.onMove(e));
+      document.addEventListener('touchmove', (e) => this.onMove(e), { passive: false });
+      document.addEventListener('mouseup', () => this.onEnd());
+      document.addEventListener('touchend', () => this.onEnd());
+      this._listenersBound = true;
+    }
   },
 
   onAreaStart(e) {
-    // Ignore if clicking a handle
     if (e.target.classList.contains('crop-handle')) return;
     e.preventDefault();
     e.stopPropagation();
@@ -96,7 +99,6 @@ const manualCrop = {
       let newLeft = this.state.startLeft + dx;
       let newTop = this.state.startTop + dy;
 
-      // Clamp to canvas area
       newLeft = Math.max(0, Math.min(newLeft, maxX - this.area.offsetWidth));
       newTop = Math.max(0, Math.min(newTop, maxY - this.area.offsetHeight));
 
@@ -131,7 +133,6 @@ const manualCrop = {
         newTop = this.state.startTop + (this.state.startHeight - newHeight);
       }
 
-      // Maintain minimum size
       if (newLeft < 0) { newLeft = 0; }
       if (newTop < 0) { newTop = 0; }
       if (newWidth < this.state.minSize) newWidth = this.state.minSize;
@@ -142,7 +143,6 @@ const manualCrop = {
       this.area.style.width = newWidth + 'px';
       this.area.style.height = newHeight + 'px';
 
-      // Update magnifier position near the handle being dragged
       this.updateMagnifier(newLeft, newTop, newWidth, newHeight, handle);
     }
   },
@@ -161,20 +161,29 @@ const manualCrop = {
     return { x: e.clientX, y: e.clientY };
   },
 
+  getCachedMagnifierImage() {
+    const now = Date.now();
+    const cw = this.canvas.width;
+    const ch = this.canvas.height;
+    if (!this._magnifierCache || this._magnifierCacheSize !== cw * ch || now - this._magnifierCacheTime > 500) {
+      this._magnifierCache = this.canvas.toDataURL();
+      this._magnifierCacheSize = cw * ch;
+      this._magnifierCacheTime = now;
+    }
+    return this._magnifierCache;
+  },
+
   showMagnifier(x, y) {
     if (!this.magnifier) return;
     this.magnifier.style.display = 'block';
     this.magnifier.style.left = (x - 60) + 'px';
     this.magnifier.style.top = (y - 140) + 'px';
 
-    // Show zoomed canvas content
     const canvasRect = this.canvas.getBoundingClientRect();
     const scaleX = this.canvas.width / canvasRect.width;
     const scaleY = this.canvas.height / canvasRect.height;
-    const cx = (x - canvasRect.left) * scaleX;
-    const cy = (y - canvasRect.top) * scaleY;
 
-    this.magnifier.style.backgroundImage = `url(${this.canvas.toDataURL()})`;
+    this.magnifier.style.backgroundImage = `url(${this.getCachedMagnifierImage()})`;
     this.magnifier.style.backgroundSize = `${canvasRect.width * scaleX}px ${canvasRect.height * scaleY}px`;
     this.magnifier.style.backgroundPosition = `-${x - 60}px -${y - 140}px`;
   },
@@ -219,12 +228,28 @@ const manualCrop = {
     };
   },
 
+  getCropResult() {
+    if (this.state.mode === 'quad') {
+      return { quad: this.getQuadPoints() };
+    }
+    return { rect: this.getCropRect() };
+  },
+
+  getQuadPoints() {
+    const rect = this.getCropRect();
+    return {
+      tl: { x: rect.x, y: rect.y },
+      tr: { x: rect.x + rect.width, y: rect.y },
+      bl: { x: rect.x, y: rect.y + rect.height },
+      br: { x: rect.x + rect.width, y: rect.y + rect.height }
+    };
+  },
+
   resetCropArea() {
     if (!this.area || !this.canvas) return;
 
     const canvasRect = this.canvas.getBoundingClientRect();
     
-    // Set crop area to full canvas with padding
     const padding = Math.min(canvasRect.width, canvasRect.height) * 0.05;
     
     this.area.style.left = padding + 'px';

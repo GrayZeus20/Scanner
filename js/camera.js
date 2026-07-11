@@ -3,18 +3,25 @@ const camera = {
   video: document.getElementById('video'),
   captureHandlerBound: false,
   capturedCount: 0,
+  isTorchOn: false,
+  facingMode: 'environment',
 
   bindCaptureHandler() {
     if (this.captureHandlerBound) return;
     document.getElementById('captureBtn').addEventListener('click', () => this.capture());
     document.getElementById('finishCamera').addEventListener('click', () => this.finish());
     document.getElementById('cancelCamera').addEventListener('click', () => this.cancel());
+    document.getElementById('flashToggle').addEventListener('click', () => this.toggleFlash());
     
-    // Add Tap to Focus behavior
+    const cameraToggle = document.getElementById('cameraToggle');
+    if (cameraToggle) {
+      cameraToggle.addEventListener('click', () => this.toggleFacing());
+    }
+
     const videoContainer = document.getElementById('cameraView');
     videoContainer.addEventListener('click', (e) => {
       const t = e.target;
-      if (t.id === 'captureBtn' || t.id === 'finishCamera' || t.id === 'cancelCamera' || t.closest('#captureBtn') || t.closest('.camera-action-btn')) return;
+      if (t.id === 'captureBtn' || t.id === 'finishCamera' || t.id === 'cancelCamera' || t.id === 'flashToggle' || t.id === 'cameraToggle' || t.closest('#captureBtn') || t.closest('.camera-action-btn') || t.closest('.flash-btn')) return;
       this.tapToFocus(e);
     });
     
@@ -23,7 +30,11 @@ const camera = {
 
   async start() {
     if (!navigator.mediaDevices?.getUserMedia) {
-      this.showError('unsupported');
+      if (!window.isSecureContext) {
+        this.showError('notSecure');
+      } else {
+        this.showError('unsupported');
+      }
       return;
     }
 
@@ -31,7 +42,7 @@ const camera = {
     try {
       const constraints = {
         video: { 
-          facingMode: 'environment',
+          facingMode: this.facingMode,
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         } 
@@ -66,6 +77,8 @@ const camera = {
         this.showError('notFound');
       } else if (err?.name === 'NotAllowedError' || err?.name === 'SecurityError') {
         this.showError('permissionDenied');
+      } else if (!window.isSecureContext) {
+        this.showError('notSecure');
       } else {
         this.showError('unsupported');
       }
@@ -80,6 +93,11 @@ const camera = {
       const capabilities = track.getCapabilities();
       const advancedConstraints = [];
 
+      const flashBtn = document.getElementById('flashToggle');
+      if (capabilities.torch) {
+        flashBtn.classList.remove('hidden');
+      }
+
       if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
         advancedConstraints.push({ focusMode: 'continuous' });
       }
@@ -93,10 +111,24 @@ const camera = {
 
       if (advancedConstraints.length > 0) {
         await track.applyConstraints({ advanced: advancedConstraints });
-        console.log('Camera enhancements applied (Continuous Focus Enabled)');
       }
     } catch (err) {
       console.warn('Partial camera enhancement failed:', err);
+    }
+  },
+
+  async toggleFacing() {
+    this.facingMode = this.facingMode === 'environment' ? 'user' : 'environment';
+    const cameraToggle = document.getElementById('cameraToggle');
+    if (cameraToggle) {
+      cameraToggle.classList.toggle('active', this.facingMode === 'user');
+    }
+    const track = this.stream?.getVideoTracks()[0];
+    if (track) {
+      await track.applyConstraints({ facingMode: this.facingMode });
+    } else {
+      this.stop();
+      this.start();
     }
   },
 
@@ -111,9 +143,8 @@ const camera = {
     app.loadImageFromSrc(dataUrl);
     
     this.capturedCount++;
-    app.showToast('Foto ke-' + this.capturedCount + ' diambil');
+    app.showToast(t('photoCaptured') + this.capturedCount + ' ' + t('photoTaken'));
     
-    // Flash effect
     const video = document.getElementById('video');
     video.style.opacity = '0.5';
     setTimeout(() => { video.style.opacity = '1'; }, 100);
@@ -121,16 +152,38 @@ const camera = {
 
   finish() {
     if (this.capturedCount > 0) {
-      app.showToast(this.capturedCount + ' foto berhasil disimpan');
+      app.showToast(this.capturedCount + ' ' + t('photoCount'));
     }
+    if (this.isTorchOn) this.toggleFlash();
     this.stop();
   },
 
   cancel() {
     if (this.capturedCount > 0) {
-      app.showToast('Pengambilan dibatalkan');
+      app.showToast(t('captureCancelled'));
     }
+    if (this.isTorchOn) this.toggleFlash();
     this.stop();
+  },
+
+  async toggleFlash() {
+    const track = this.stream?.getVideoTracks()[0];
+    if (!track) return;
+
+    try {
+      this.isTorchOn = !this.isTorchOn;
+      await track.applyConstraints({
+        advanced: [{ torch: this.isTorchOn }]
+      });
+      
+      const flashBtn = document.getElementById('flashToggle');
+      flashBtn.classList.toggle('active', this.isTorchOn);
+      flashBtn.innerHTML = this.isTorchOn ? '<i data-lucide="zap" aria-hidden="true"></i>' : '<i data-lucide="zap-off" aria-hidden="true"></i>';
+      if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+    } catch (err) {
+      console.error('Torch error:', err);
+      app.showToast(t('flashUnavailable'));
+    }
   },
 
   stop() {
@@ -141,6 +194,7 @@ const camera = {
     if (this.video) {
       this.video.srcObject = null;
     }
+    this.facingMode = 'environment';
     document.getElementById('cameraView')?.classList.add('hidden');
   },
 
@@ -196,7 +250,7 @@ const camera = {
   },
 
   showError(type) {
-    const key = type === 'notFound' ? 'cameraNotFound' : type === 'permissionDenied' ? 'cameraPermissionDenied' : 'cameraUnsupported';
+    const key = type === 'notFound' ? 'cameraNotFound' : type === 'permissionDenied' ? 'cameraPermissionDenied' : type === 'notSecure' ? 'cameraNotSecure' : 'cameraUnsupported';
     app.showToast(t(key));
   }
 };

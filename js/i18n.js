@@ -6,10 +6,13 @@ const i18n = {
     takePhoto: 'Ambil Foto',
     importFile: 'Impor File',
     autoCrop: 'Potong',
+    cropDesc: 'Pilih area potong secara manual',
     filters: 'Filter',
+    filterDesc: 'Atur kecerahan, kontras, dll',
     tools: 'Alat',
     settings: 'Pengaturan AI',
     export: 'Simpan',
+    save: 'Simpan',
     brightness: 'Kecerahan',
     contrast: 'Kontras',
     saturation: 'Saturasi',
@@ -32,6 +35,7 @@ const i18n = {
     exportJpgDesc: 'Ukuran file lebih kecil',
     capture: 'Ambil',
     cancel: 'Batal',
+    close: 'Tutup',
     saving: 'Menyimpan...',
     saved: 'Tersimpan!',
     error: 'Terjadi kesalahan',
@@ -39,15 +43,47 @@ const i18n = {
     cameraPermissionDenied: 'Izin kamera ditolak. Aktifkan akses kamera di pengaturan browser.',
     cameraNotFound: 'Kamera tidak ditemukan. Hubungkan perangkat kamera atau pilih sumber lain.',
     cameraUnsupported: 'Kamera tidak didukung di browser ini atau konteksnya tidak aman.',
+    cameraNotSecure: 'Kamera memerlukan konteks HTTPS yang aman. Silakan buka aplikasi melalui HTTPS.',
     storageFull: 'Penyimpanan penuh. Hapus scan lama atau gunakan ruang yang lebih banyak.',
     noImage: 'Tidak ada gambar',
     processing: 'Memproses...',
     ocr: 'Teks (OCR)',
+    ocrDesc: 'Ekstrak teks dari gambar',
     copyText: 'Salin Teks',
     ocrDone: 'Teks berhasil diekstrak',
+    ocrOrRunFirst: 'atau jalankan OCR terlebih dahulu',
     cropSuccess: 'Berhasil dipotong',
+    cropInstruction: 'Seret sudut untuk memotong',
+    cropTooSmall: 'Area potong terlalu kecil',
     resetSuccess: 'Filter direset',
     confirmDelete: 'Hapus scan ini?',
+    apiKeySaved: 'API Key tersimpan',
+    apiKeyEnter: 'Masukkan API Key',
+    apiKeyNotice: 'Kunci Anda disimpan di browser dan dikirim langsung ke OpenAI.',
+    aiAnalyze: 'Analisis AI',
+    aiAnalyzing: 'Analisis...',
+    aiStarting: 'Memulai analisis...',
+    flashOn: 'Flash Aktif',
+    flashOff: 'Flash Tidak Aktif',
+    flashUnavailable: 'Flash tidak tersedia di perangkat ini',
+    photoCount: 'foto berhasil disimpan',
+    photoCaptured: 'Foto ke-',
+    photoTaken: 'diambil',
+    captureCancelled: 'Pengambilan dibatalkan',
+    history: 'Riwayat',
+    historyTitle: 'Riwayat Scan',
+    closeHistory: 'Tutup Riwayat',
+    settingsAi: 'Pengaturan AI',
+    cameraFront: 'Kamera Depan',
+    cameraRear: 'Kamera Belakang',
+    switchCamera: 'Ganti Kamera',
+    torchToggle: 'Aktifkan/Nonaktifkan Senter',
+    loadScan: 'Muat Scan',
+    deleteScan: 'Hapus Scan',
+    ocrTimedOut: 'Waktu OCR habis. Gambar mungkin terlalu besar atau kompleks.',
+    ocrCanvasEmpty: 'Canvas kosong atau tidak valid untuk OCR.',
+    ocrCancelled: 'OCR dibatalkan',
+    ocrStarting: 'Memulai OCR...',
   },
   en: {
     appName: 'WebScanner',
@@ -56,10 +92,13 @@ const i18n = {
     takePhoto: 'Take Photo',
     importFile: 'Import File',
     autoCrop: 'Crop',
+    cropDesc: 'Manually select crop area',
     filters: 'Filters',
+    filterDesc: 'Adjust brightness, contrast, etc.',
     tools: 'Tools',
     settings: 'AI Settings',
     export: 'Export',
+    save: 'Save',
     brightness: 'Brightness',
     contrast: 'Contrast',
     saturation: 'Saturation',
@@ -82,6 +121,7 @@ const i18n = {
     exportJpgDesc: 'Smaller file size',
     capture: 'Capture',
     cancel: 'Cancel',
+    close: 'Close',
     saving: 'Saving...',
     saved: 'Saved!',
     error: 'An error occurred',
@@ -89,15 +129,47 @@ const i18n = {
     cameraPermissionDenied: 'Camera permission denied. Please allow camera access in your browser settings.',
     cameraNotFound: 'No camera was found. Please connect a camera or choose another source.',
     cameraUnsupported: 'Camera is not supported in this browser or the context is not secure.',
+    cameraNotSecure: 'Camera requires a secure HTTPS context. Please open the application via HTTPS.',
     storageFull: 'Storage is full. Delete older scans or free up space.',
     noImage: 'No image',
     processing: 'Processing...',
     ocr: 'Text (OCR)',
+    ocrDesc: 'Extract text from image',
     copyText: 'Copy Text',
     ocrDone: 'Text extracted successfully',
+    ocrOrRunFirst: 'or run OCR first',
     cropSuccess: 'Cropped successfully',
+    cropInstruction: 'Drag corners to crop',
+    cropTooSmall: 'Crop area is too small',
     resetSuccess: 'Filters reset',
     confirmDelete: 'Delete this scan?',
+    apiKeySaved: 'API Key saved',
+    apiKeyEnter: 'Enter API Key',
+    apiKeyNotice: 'Your key is stored in the browser and sent directly to OpenAI.',
+    aiAnalyze: 'AI Analysis',
+    aiAnalyzing: 'Analyzing...',
+    aiStarting: 'Starting analysis...',
+    flashOn: 'Flash On',
+    flashOff: 'Flash Off',
+    flashUnavailable: 'Flash is not available on this device',
+    photoCount: 'photos saved',
+    photoCaptured: 'Photo #',
+    photoTaken: 'captured',
+    captureCancelled: 'Capture cancelled',
+    history: 'History',
+    historyTitle: 'Scan History',
+    closeHistory: 'Close History',
+    settingsAi: 'AI Settings',
+    cameraFront: 'Front Camera',
+    cameraRear: 'Rear Camera',
+    switchCamera: 'Switch Camera',
+    torchToggle: 'Toggle Flashlight',
+    loadScan: 'Load Scan',
+    deleteScan: 'Delete Scan',
+    ocrTimedOut: 'OCR timed out. Image may be too large or complex.',
+    ocrCanvasEmpty: 'Canvas is empty or invalid for OCR.',
+    ocrCancelled: 'OCR cancelled',
+    ocrStarting: 'Starting OCR...',
   },
 };
 
@@ -106,11 +178,29 @@ let currentLang = 'id';
 function setLanguage(lang) {
   if (!i18n[lang]) return;
   currentLang = lang;
+  document.documentElement.lang = lang;
+
   const elements = document.querySelectorAll('[data-i18n]');
   elements.forEach(el => {
     const key = el.dataset.i18n;
     if (i18n[lang][key]) {
       el.textContent = i18n[lang][key];
+    }
+  });
+
+  const ariaElements = document.querySelectorAll('[data-i18n-aria]');
+  ariaElements.forEach(el => {
+    const key = el.dataset.i18nAria;
+    if (i18n[lang][key]) {
+      el.setAttribute('aria-label', i18n[lang][key]);
+    }
+  });
+
+  const dialogElements = document.querySelectorAll('[data-i18n-dialog]');
+  dialogElements.forEach(el => {
+    const key = el.dataset.i18nDialog;
+    if (i18n[lang][key]) {
+      el.setAttribute('aria-label', i18n[lang][key]);
     }
   });
 }
