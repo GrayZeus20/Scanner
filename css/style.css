@@ -23,6 +23,8 @@
   --nav-height: 64px;
   --header-height: 56px;
   --sheet-width: 320px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 html, body {
@@ -49,8 +51,8 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--header-height);
-  padding: 0 16px;
+  height: calc(var(--header-height) + var(--safe-top));
+  padding: var(--safe-top) 16px 0;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   z-index: 10;
@@ -323,11 +325,11 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-around;
-  height: var(--nav-height);
+  height: calc(var(--nav-height) + var(--safe-bottom));
+  padding: 0 8px var(--safe-bottom);
   background: var(--surface);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
-  padding: 0 8px;
 }
 
 .nav-btn {
@@ -369,7 +371,7 @@ html, body {
   z-index: 50;
   display: flex;
   flex-direction: column;
-  animation: slideIn 0.3s ease;
+  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
 }
 
@@ -694,6 +696,88 @@ select:focus-visible,
   border-radius: 4px;
 }
 
+/* OCR & AI Result Styling */
+.ocr-result {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  min-height: 100px;
+  max-height: 50vh;
+}
+
+#aiResultArea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  margin-top: 16px;
+  animation: fadeIn 0.3s ease;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+#aiResultArea .ai-tag {
+  display: inline-block;
+  background: var(--accent);
+  color: white;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* API Key Input Styling */
+.api-key-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.api-key-input:focus {
+  border-color: var(--navy);
+}
+
+/* Mobile Adjustments for Tools Sheet */
+@media (max-width: 768px) {
+  #toolsSheet .sheet-body {
+    gap: 12px;
+  }
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Interaction States (Tap Feedback) */
+button:active, .nav-btn:active {
+  opacity: 0.8;
+  transform: scale(0.98);
+  transition: transform 0.1s, opacity 0.1s;
+}
+
 @media (max-width: 768px) {
   :root {
     --sheet-width: 100vw;
@@ -731,5 +815,11 @@ select:focus-visible,
 @media (min-width: 769px) {
   .filter-row {
     grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .sheet-body {
+    padding-bottom: calc(16px + var(--safe-bottom));
   }
 }

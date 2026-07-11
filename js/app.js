@@ -101,6 +101,9 @@ const app = {
       document.getElementById('toolsSheet').classList.add('hidden');
     });
 
+    document.getElementById('closeFilterSheet').addEventListener('click', () => document.getElementById('filterSheet').classList.add('hidden'));
+    document.getElementById('closeOcrSheet').addEventListener('click', () => document.getElementById('ocrSheet').classList.add('hidden'));
+
     document.getElementById('navExport').addEventListener('click', () => {
       document.getElementById('exportSheet').classList.remove('hidden');
       lucide.createIcons();
@@ -656,20 +659,21 @@ const app = {
     try {
       // 1. LOCAL AI (Fast, Private)
       const localResult = await aiEngine.analyzeLocal(text);
-      resultDiv.innerText = `[Local] Jenis: ${localResult.type}\n${localResult.summary}`;
+      let html = `<span class="ai-tag">Local AI</span><strong>Jenis:</strong> ${localResult.type}<br>${localResult.summary}`;
 
       // 2. CLOUD AI (Opt-in, requires API Key)
       if (aiEngine.getApiKey()) {
-        resultDiv.innerText += '\n\n--- Analisis Cloud ---\n';
+        resultDiv.innerHTML = html;
+        html += `<br><br><span class="ai-tag">Cloud AI (GPT-4o-mini)</span>`;
         const cloudResult = await aiEngine.analyzeCloud(text);
         if (cloudResult.fullAnalysis) {
-          resultDiv.innerText += cloudResult.fullAnalysis;
-        } else {
-          resultDiv.innerText += cloudResult.summary;
+          html += `<div style="margin-top: 8px; white-space: pre-wrap;">${cloudResult.fullAnalysis}</div>`;
         }
       } else {
-        resultDiv.innerText += '\n\nℹ Untuk analisis cloud yang lebih dalam, atur API Key di Pengaturan.';
+        html += `<br><br><div style="color: var(--text-secondary); font-size: 13px; margin-top: 8px;">Untuk analisis cloud yang lebih dalam, atur API Key di Pengaturan.</div>`;
       }
+      
+      resultDiv.innerHTML = html;
     } catch (err) {
       resultDiv.innerText = 'Error: ' + err.message;
     } finally {
