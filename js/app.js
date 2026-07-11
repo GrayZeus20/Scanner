@@ -26,7 +26,7 @@ const app = {
   },
 
   canvas: document.getElementById('mainCanvas'),
-  ctx: document.getElementById('mainCanvas').getContext('2d'),
+  ctx: document.getElementById('mainCanvas').getContext('2d', { willReadFrequently: true }),
 
   setActiveNav(id) {
     document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -556,7 +556,7 @@ const app = {
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = canvas.width;
             tempCanvas.height = canvas.height;
-            const tempCtx = tempCanvas.getContext('2d');
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
             tempCtx.filter = [
               `brightness(${100 + this.state.filters.brightness}%)`,
               `contrast(${100 + this.state.filters.contrast}%)`,
@@ -793,7 +793,7 @@ const app = {
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = newW;
     tempCanvas.height = newH;
-    const tempCtx = tempCanvas.getContext('2d');
+    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
     tempCtx.translate(newW / 2, newH / 2);
     tempCtx.rotate(radians);
     tempCtx.drawImage(img, 0, 0, srcW, srcH, -srcW / 2, -srcH / 2, srcW, srcH);
@@ -843,7 +843,7 @@ const app = {
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = w;
     tempCanvas.height = h;
-    const tempCtx = tempCanvas.getContext('2d');
+    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
 
     if (direction === 'horizontal') {
       tempCtx.translate(w, 0);
