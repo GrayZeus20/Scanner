@@ -25,31 +25,42 @@ export default {
         });
       }
 
-      // Gemini API call
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${env.GEMINI_API_KEY}`;
-
-      const geminiResponse = await fetch(geminiUrl, {
+      // Groq API (OpenAI-compatible endpoint)
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${env.GROQ_API_KEY}`
+        },
         body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }]
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            {
+              role: 'system',
+              content: 'Anda adalah asisten AI yang ahli dalam menganalisis dokumen. Analisis teks OCR dengan akurat, ekstrak data terstruktur, dan berikan ringkasan yang jelas dalam bahasa Indonesia.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 4096
         })
       });
 
-      if (!geminiResponse.ok) {
-        const errorData = await geminiResponse.json().catch(() => ({}));
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
         return new Response(JSON.stringify({
-          error: errorData.error?.message || `Gemini API error: ${geminiResponse.status}`
+          error: errorData.error?.message || `Groq API error: ${response.status}`
         }), {
-          status: geminiResponse.status,
+          status: response.status,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
-      const data = await geminiResponse.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content || 'Tidak ada respon dari AI.';
 
       return new Response(JSON.stringify({ text }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
