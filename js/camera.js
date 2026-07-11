@@ -6,6 +6,14 @@ const camera = {
   bindCaptureHandler() {
     if (this.captureHandlerBound) return;
     document.getElementById('captureBtn').addEventListener('click', () => this.capture());
+    
+    // Add Tap to Focus behavior
+    const videoContainer = document.getElementById('cameraView');
+    videoContainer.addEventListener('click', (e) => {
+      if (e.target.id === 'captureBtn' || e.target.closest('#captureBtn')) return;
+      this.tapToFocus(e);
+    });
+    
     this.captureHandlerBound = true;
   },
 
@@ -16,21 +24,38 @@ const camera = {
     }
 
     try {
-      // Try to get the highest resolution possible for better detail
+      // Use 'ideal' instead of 'max' to allow the camera driver to choose the best resolution for focus
       const constraints = {
         video: { 
           facingMode: 'environment',
-          width: { max: 4096 },
-          height: { max: 4096 }
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
         } 
       };
 
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
       this.video.srcObject = this.stream;
-      document.getElementById('cameraView').classList.remove('hidden');
+      
+      // Wait for video metadata to be loaded before applying advanced constraints
+      await new Promise((resolve, reject) => {
+        if (this.video.readyState >= 2) {
+          resolve();
+        } else {
+          const timer = setTimeout(() => {
+            this.video.removeEventListener('loadedmetadata', handler);
+            reject(new Error('Timeout waiting for metadata'));
+          }, 5000);
 
-      // Apply continuous auto-focus and high quality settings
+          const handler = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          this.video.addEventListener('loadedmetadata', handler, { once: true });
+        }
+      });
+
       this.applyCameraEnhancements();
+      document.getElementById('cameraView').classList.remove('hidden');
     } catch (err) {
       console.error(err);
       if (err?.name === 'NotFoundError') {
@@ -49,31 +74,26 @@ const camera = {
 
     try {
       const capabilities = track.getCapabilities();
-      const settings = {};
+      const advancedConstraints = [];
 
-      // 1. Continuous Auto-Focus
+      // 1. Continuous Auto-Focus (CRITICAL)
       if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
-        settings.focusMode = 'continuous';
+        advancedConstraints.push({ focusMode: 'continuous' });
       }
 
-      // 2. High Resolution Constraint (try to override if supported)
-      if (capabilities.width && capabilities.width.max) {
-        settings.width = { ideal: capabilities.width.max };
-      }
-      if (capabilities.height && capabilities.height.max) {
-        settings.height = { ideal: capabilities.height.max };
-      }
-
-      // 3. Exposure and White Balance for better clarity
+      // 2. Exposure and White Balance for better clarity
       if (capabilities.exposureMode && capabilities.exposureMode.includes('continuous')) {
-        settings.exposureMode = 'continuous';
+        advancedConstraints.push({ exposureMode: 'continuous' });
       }
       if (capabilities.whiteBalanceMode && capabilities.whiteBalanceMode.includes('continuous')) {
-        settings.whiteBalanceMode = 'continuous';
+        advancedConstraints.push({ whiteBalanceMode: 'continuous' });
       }
 
-      await track.applyConstraints({ advanced: [settings] });
-      console.log('Camera enhancements applied:', settings);
+      // 3. Try to apply constraints in parts to ensure the main ones (like focus) succeed
+      if (advancedConstraints.length > 0) {
+        await track.applyConstraints({ advanced: advancedConstraints });
+        console.log('Camera enhancements applied (Continuous Focus Enabled)');
+      }
     } catch (err) {
       console.warn('Partial camera enhancement failed:', err);
     }
@@ -91,6 +111,60 @@ const camera = {
 
     this.stop();
     document.getElementById('cameraView').classList.add('hidden');
+  },
+
+  tapToFocus(e) {
+    const track = this.stream?.getVideoTracks()[0];
+    if (!track) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+
+    // Show focus indicator
+    const indicator = document.getElementById('focusIndicator');
+    if (indicator) {
+      indicator.style.left = `${e.clientX - rect.left}px`;
+      indicator.style.top = `${e.clientY - rect.top}px`;
+      indicator.classList.remove('hidden');
+      indicator.classList.add('active');
+      setTimeout(() => {
+        indicator.classList.remove('active');
+        indicator.classList.add('hidden');
+      }, 800);
+    }
+
+    // Try to apply point of interest if supported
+    try {
+      if (typeof track.getCapabilities === 'function') {
+        const caps = track.getCapabilities();
+        if (caps.focusMode && caps.focusMode.includes('continuous')) {
+          // Map tap coordinates to video content accounting for object-fit: cover
+          const vw = this.video.videoWidth;
+          const vh = this.video.videoHeight;
+          const cw = rect.width;
+          const ch = rect.height;
+
+          const scale = Math.max(cw / vw, ch / vh);
+          const displayedW = vw * scale;
+          const displayedH = vh * scale;
+          const offsetX = (cw - displayedW) / 2;
+          const offsetY = (ch - displayedH) / 2;
+
+          const sx = Math.max(0, Math.min(1, (x * cw - offsetX) / displayedW));
+          const sy = Math.max(0, Math.min(1, (y * ch - offsetY) / displayedH));
+
+          track.applyConstraints({
+            advanced: [{
+              focusMode: 'continuous',
+              pointsOfInterest: [{ x: sx, y: sy }]
+            }]
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Focus re-trigger failed:', err);
+    }
   },
 
   stop() {

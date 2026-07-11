@@ -21,7 +21,8 @@ const aiEngine = {
         if (lowerText.match(/faktur|invoice|total|bayar|beli|harga|struk|nota/)) {
           type = 'Dokumen Keuangan';
           structuredData = this.extractFinancialData(text);
-          summary = `Dokumen ini adalah bukti transaksi. Ditemukan ${structuredData.items ? structuredData.items.length + ' item' : 'beberapa item'}.`;
+          const itemCount = Array.isArray(structuredData.items) ? structuredData.items.length : 0;
+          summary = `Dokumen ini adalah bukti transaksi. Ditemukan ${itemCount > 0 ? `${itemCount} item` : 'beberapa item'}.`;
         } else if (lowerText.match(/identitas|nama.*lahir|ttl|nik|ktp|sim|tempat.*lahir/)) {
           type = 'Kartu Identitas';
           structuredData = this.extractIdentityData(text);
@@ -95,7 +96,7 @@ const aiEngine = {
   },
 
   extractPhones(text) {
-    return (text.match(/(?:08|\+62|62)\d{9,12}/g) || []).slice(0, 2);
+    return Array.from(text.matchAll(/(?:^|[^0-9])((?:08|\+62|62)\d{9,12})/g), (match) => match[1]).slice(0, 2);
   },
 
   extractEmails(text) {
@@ -109,7 +110,10 @@ const aiEngine = {
     if (keys.length > 0) {
       output += '\n--- Data Terstruktur ---\n';
       keys.forEach(key => {
-        if (key === 'items') return;
+        if (key === 'items' && Array.isArray(data[key]) && data[key].length > 0) {
+          output += `- ITEMS:\n${data[key].map(item => `  • ${item}`).join('\n')}\n`;
+          return;
+        }
         const val = Array.isArray(data[key]) ? data[key].join(', ') : data[key];
         output += `- ${key.toUpperCase()}: ${val}\n`;
       });

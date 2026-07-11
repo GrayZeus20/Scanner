@@ -22,6 +22,16 @@ const app = {
   canvas: document.getElementById('mainCanvas'),
   ctx: document.getElementById('mainCanvas').getContext('2d'),
 
+  escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[char]));
+  },
+
   init() {
     const savedMode = localStorage.getItem('scanner.darkMode');
     if (savedMode !== null) {
@@ -668,13 +678,14 @@ const app = {
         html += `<span class="ai-tag">Cloud AI (GPT-4o-mini)</span>`;
         const cloudResult = await aiEngine.analyzeCloud(text);
         if (cloudResult.fullAnalysis) {
-          html += `<div style="margin-top: 8px; white-space: pre-wrap; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px;">${cloudResult.fullAnalysis}</div>`;
+          html += `<div style="margin-top: 8px; white-space: pre-wrap; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px;">${this.escapeHtml(cloudResult.fullAnalysis)}</div>`;
         }
         // Add local data as structured supplement
-        html += `<span class="ai-tag">Data Lokal</span><pre style="font-size: 12px; white-space: pre-wrap; margin-top: 4px; color: var(--text-secondary);">${JSON.stringify(localResult.structuredData, null, 2)}</pre>`;
+        const structuredText = this.escapeHtml(JSON.stringify(localResult.structuredData, null, 2));
+        html += `<span class="ai-tag">Data Lokal</span><pre style="font-size: 12px; white-space: pre-wrap; margin-top: 4px; color: var(--text-secondary);">${structuredText}</pre>`;
       } else {
         // Full Local Experience
-        html += localResult.fullAnalysis;
+        html += `<div style="white-space: pre-wrap;">${this.escapeHtml(localResult.fullAnalysis)}</div>`;
       }
       
       resultDiv.innerHTML = html;

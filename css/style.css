@@ -771,6 +771,31 @@ select:focus-visible,
   }
 }
 
+/* Focus Indicator for Tap to Focus */
+.focus-indicator {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0.8);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 10px rgba(0, 188, 212, 0.5);
+}
+
+.focus-indicator.active {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.2);
+  animation: focusPulse 0.8s ease-out;
+}
+
+@keyframes focusPulse {
+  0% { transform: translate(-50%, -50%) scale(0.8); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
+}
+
 /* Interaction States (Tap Feedback) */
 button:active, .nav-btn:active {
   opacity: 0.8;
