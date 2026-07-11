@@ -1028,63 +1028,122 @@ select:focus-visible,
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
-/* ─── Manual Crop Overlay ─────────────────────────────────────── */
+/* ─── Manual Crop Overlay (CamScanner-style) ─────────────────── */
 .crop-overlay {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(15, 23, 42, 0.7);
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  z-index: 20;
+  touch-action: none;
+  user-select: none;
 }
 
 .crop-area {
   position: absolute;
-  width: 80%;
-  height: 80%;
-  border: 2px dashed white;
+  border: 2px solid rgba(0, 188, 212, 0.9);
   cursor: move;
-  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.7);
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-xs);
+  z-index: 21;
+  transition: none;
+}
+
+.crop-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, rgba(255,255,255,0.25) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.25) 1px, transparent 1px);
+  background-size: 33.333% 33.333%;
 }
 
 .crop-handle {
   position: absolute;
-  width: 18px;
-  height: 18px;
-  background: var(--color-accent);
+  width: 28px;
+  height: 28px;
+  background: white;
   border-radius: 50%;
-  border: 2px solid white;
-  box-shadow: var(--shadow-sm);
+  border: 3px solid var(--accent);
+  z-index: 22;
+  touch-action: none;
 }
 
-.top-left { top: -9px; left: -9px; cursor: nw-resize; }
-.top-right { top: -9px; right: -9px; cursor: ne-resize; }
-.bottom-left { bottom: -9px; left: -9px; cursor: sw-resize; }
-.bottom-right { bottom: -9px; right: -9px; cursor: se-resize; }
-
-.crop-controls {
+.crop-handle::after {
+  content: '';
   position: absolute;
-  bottom: 28px;
-  display: flex;
-  gap: 12px;
-  z-index: 20;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
 }
 
-.crop-controls button {
-  padding: 10px 24px;
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  font-family: inherit;
-  font-size: 14px;
+[data-handle="tl"] { top: -14px; left: -14px; cursor: nw-resize; }
+[data-handle="tr"] { top: -14px; right: -14px; cursor: ne-resize; }
+[data-handle="bl"] { bottom: -14px; left: -14px; cursor: sw-resize; }
+[data-handle="br"] { bottom: -14px; right: -14px; cursor: se-resize; }
+
+.crop-magnifier {
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 30;
+  display: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.crop-action-bar {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 20px;
+  z-index: 30;
+}
+
+.crop-action-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
   border: none;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s, box-shadow 0.15s;
+  touch-action: manipulation;
+}
+
+.crop-action-btn:active {
+  transform: scale(0.9);
+}
+
+.crop-cancel {
+  background: #ef4444;
+  color: white;
+}
+
+.crop-confirm {
+  background: #22c55e;
+  color: white;
+}
+
+.crop-action-btn i {
+  width: 24px;
+  height: 24px;
 }
 
 .crop-controls button:active { transform: scale(0.96); }

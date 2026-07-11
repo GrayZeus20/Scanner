@@ -70,18 +70,25 @@
           <div class="pages-tray" id="pagesTray"></div>
           <div class="canvas-wrapper" id="canvasWrapper">
             <canvas id="mainCanvas"></canvas>
-            <!-- Crop Overlay -->
+            <!-- Manual Crop Overlay (CamScanner-style) -->
             <div id="cropOverlay" class="crop-overlay hidden">
               <div id="cropArea" class="crop-area">
-                <div class="crop-handle top-left"></div>
-                <div class="crop-handle top-right"></div>
-                <div class="crop-handle bottom-left"></div>
-                <div class="crop-handle bottom-right"></div>
+                <div class="crop-grid"></div>
+                <div class="crop-handle" data-handle="tl"></div>
+                <div class="crop-handle" data-handle="tr"></div>
+                <div class="crop-handle" data-handle="bl"></div>
+                <div class="crop-handle" data-handle="br"></div>
+                <div class="crop-magnifier" id="cropMagnifier"></div>
               </div>
-              <div class="crop-controls">
-                <button id="confirmCropBtn" class="btn btn-primary" style="background: #22C55E;">Simpan</button>
-                <button id="cancelCropBtn" class="btn btn-danger" style="width: auto;">Batal</button>
-              </div>
+            </div>
+            <!-- Crop Action Bar -->
+            <div id="cropActionBar" class="crop-action-bar hidden">
+              <button id="cancelCropBtn" class="crop-action-btn crop-cancel">
+                <i data-lucide="x"></i>
+              </button>
+              <button id="confirmCropBtn" class="crop-action-btn crop-confirm">
+                <i data-lucide="check"></i>
+              </button>
             </div>
           </div>
         </div>
@@ -336,6 +343,7 @@
   <script src="js/i18n.js"></script>
   <script src="js/camera.js"></script>
   <script src="js/edge-detection.js"></script>
+  <script src="js/manual-crop.js"></script>
   <script src="js/pdf-export.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/ocr.js"></script>

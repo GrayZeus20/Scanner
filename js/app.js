@@ -490,52 +490,45 @@ const app = {
       this.showToast(t('noImage'));
       return;
     }
+    this.showToast("Seret sudut untuk memotong");
+    
     const overlay = document.getElementById('cropOverlay');
+    const actionBar = document.getElementById('cropActionBar');
     overlay.classList.remove('hidden');
+    actionBar.classList.remove('hidden');
     this.state.isCropping = true;
+    
+    // Initialize crop area to canvas size
+    manualCrop.resetCropArea();
+    manualCrop.init();
   },
 
   confirmManualCrop() {
-    const cropArea = document.getElementById('cropArea');
-    const canvasWrapper = document.getElementById('canvasWrapper');
+    const rect = manualCrop.getCropRect();
     const canvas = this.canvas;
 
-    if (!cropArea || !canvasWrapper || !canvas) return;
-
-    const wrapperRect = canvasWrapper.getBoundingClientRect();
-    const cropRect = cropArea.getBoundingClientRect();
-
-    const scaleX = canvas.width / wrapperRect.width;
-    const scaleY = canvas.height / wrapperRect.height;
-
-    const x = (cropRect.left - wrapperRect.left) * scaleX;
-    const y = (cropRect.top - wrapperRect.top) * scaleY;
-    const w = cropRect.width * scaleX;
-    const h = cropRect.height * scaleY;
-
-    if (w < 10 || h < 10) {
-        this.showToast("Area potong terlalu kecil");
-        return;
+    if (!rect || rect.width < 10 || rect.height < 10) {
+      this.showToast("Area potong terlalu kecil");
+      return;
     }
 
     try {
-      const imageData = this.ctx.getImageData(x, y, w, h);
-      canvas.width = w;
-      canvas.height = h;
+      const imageData = this.ctx.getImageData(rect.x, rect.y, rect.width, rect.height);
+      canvas.width = rect.width;
+      canvas.height = rect.height;
       this.ctx.putImageData(imageData, 0, 0);
 
-      this.state.canvasWidth = w;
-      this.state.canvasHeight = h;
-      this.state.currentImageData = this.ctx.getImageData(0, 0, w, h);
+      this.state.canvasWidth = rect.width;
+      this.state.canvasHeight = rect.height;
+      this.state.currentImageData = this.ctx.getImageData(0, 0, rect.width, rect.height);
       this.state.imageLoaded = true;
       this.showToast(t('cropSuccess'));
 
-      // Update page with new image data
       const croppedImage = new Image();
       croppedImage.src = canvas.toDataURL();
       croppedImage.onload = () => {
-          this.setCurrentPageImage(croppedImage);
-          this.applyFilters();
+        this.setCurrentPageImage(croppedImage);
+        this.applyFilters();
       };
     } catch (err) {
       console.error("Crop error:", err);
@@ -547,6 +540,7 @@ const app = {
 
   cancelManualCrop() {
     document.getElementById('cropOverlay')?.classList.add('hidden');
+    document.getElementById('cropActionBar')?.classList.add('hidden');
     this.state.isCropping = false;
   },
 
