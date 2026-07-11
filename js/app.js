@@ -659,20 +659,22 @@ const app = {
     resultDiv.innerText = 'Memulai analisis...';
 
     try {
-      // 1. LOCAL AI (Fast, Private)
+      // 1. LOCAL AI (Fast, Private & Robust)
       const localResult = await aiEngine.analyzeLocal(text);
-      let html = `<span class="ai-tag">Local AI</span><strong>Jenis:</strong> ${localResult.type}<br>${localResult.summary}`;
-
-      // 2. CLOUD AI (Opt-in, requires API Key)
+      
+      // 2. CLOUD AI (Optional Upgrade)
+      let html = '';
       if (aiEngine.getApiKey()) {
-        resultDiv.innerHTML = html;
-        html += `<br><br><span class="ai-tag">Cloud AI (GPT-4o-mini)</span>`;
+        html += `<span class="ai-tag">Cloud AI (GPT-4o-mini)</span>`;
         const cloudResult = await aiEngine.analyzeCloud(text);
         if (cloudResult.fullAnalysis) {
-          html += `<div style="margin-top: 8px; white-space: pre-wrap;">${cloudResult.fullAnalysis}</div>`;
+          html += `<div style="margin-top: 8px; white-space: pre-wrap; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px;">${cloudResult.fullAnalysis}</div>`;
         }
+        // Add local data as structured supplement
+        html += `<span class="ai-tag">Data Lokal</span><pre style="font-size: 12px; white-space: pre-wrap; margin-top: 4px; color: var(--text-secondary);">${JSON.stringify(localResult.structuredData, null, 2)}</pre>`;
       } else {
-        html += `<br><br><div style="color: var(--text-secondary); font-size: 13px; margin-top: 8px;">Untuk analisis cloud yang lebih dalam, atur API Key di Pengaturan.</div>`;
+        // Full Local Experience
+        html += localResult.fullAnalysis;
       }
       
       resultDiv.innerHTML = html;
