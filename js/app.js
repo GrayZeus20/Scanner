@@ -294,7 +294,7 @@ const app = {
     const wrapper = document.getElementById('canvasWrapper');
     const oldZoom = this.state.zoom;
     
-    this.state.zoom = Math.max(0.5, Math.min(newZoom, 5));
+    this.state.zoom = Math.max(0.2, Math.min(newZoom, 5));
     
     // Adjust pan to zoom toward center
     if (centerX !== undefined && centerY !== undefined) {
@@ -413,8 +413,11 @@ const app = {
     const dpr = window.devicePixelRatio || 1;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
+    
+    // Let CSS handle display sizing via max-width/max-height; avoid stretching
+    canvas.style.width = '';
+    canvas.style.height = '';
+    canvas.style.aspectRatio = `${w} / ${h}`;
     
     this.state.canvasWidth = w;
     this.state.canvasHeight = h;
@@ -456,6 +459,14 @@ const app = {
       };
       tray.appendChild(thumb);
     });
+
+    // Auto-scroll to active page
+    setTimeout(() => {
+      const active = tray.querySelector('.page-thumb.active');
+      if (active) {
+        active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      }
+    }, 100);
   },
 
   initFilterControls() {
@@ -663,37 +674,22 @@ const app = {
   },
 
   confirmManualCrop() {
-    const result = manualCrop.getCropResult();
-
-    if (result.quad) {
-      this.applyQuadCrop(result.quad);
-    } else if (result.rect) {
-      this.applyRectCrop(result.rect);
-    } else {
-      this.showToast(t('cropTooSmall'));
-      return;
-    }
-
-    this.cancelManualCrop();
-  },
-
-  applyRectCrop(rect) {
+    const croppedCanvas = manualCrop.cropQuadrilateral();
     const canvas = this.canvas;
 
-    if (!rect || rect.width < 10 || rect.height < 10) {
+    if (!croppedCanvas || croppedCanvas.width < 10 || croppedCanvas.height < 10) {
       this.showToast(t('cropTooSmall'));
       return;
     }
 
     try {
-      const imageData = this.ctx.getImageData(rect.x, rect.y, rect.width, rect.height);
-      canvas.width = rect.width;
-      canvas.height = rect.height;
-      this.ctx.putImageData(imageData, 0, 0);
+      canvas.width = croppedCanvas.width;
+      canvas.height = croppedCanvas.height;
+      this.ctx.drawImage(croppedCanvas, 0, 0);
 
-      this.state.canvasWidth = rect.width;
-      this.state.canvasHeight = rect.height;
-      this.state.currentImageData = this.ctx.getImageData(0, 0, rect.width, rect.height);
+      this.state.canvasWidth = croppedCanvas.width;
+      this.state.canvasHeight = croppedCanvas.height;
+      this.state.currentImageData = this.ctx.getImageData(0, 0, canvas.width, canvas.height);
       this.state.imageLoaded = true;
       this.showToast(t('cropSuccess'));
 
@@ -707,58 +703,8 @@ const app = {
       console.error("Crop error:", err);
       this.showToast(t('error'));
     }
-  },
 
-  applyQuadCrop(quad) {
-    try {
-      const tempCanvas = document.createElement('canvas');
-      const tempCtx = tempCanvas.getContext('2d');
-
-      const minX = Math.min(quad.tl.x, quad.bl.x, quad.tr.x, quad.br.x);
-      const minY = Math.min(quad.tl.y, quad.tr.y, quad.bl.y, quad.br.y);
-      const maxX = Math.max(quad.tl.x, quad.bl.x, quad.tr.x, quad.br.x);
-      const maxY = Math.max(quad.tl.y, quad.tr.y, quad.bl.y, quad.br.y);
-      const w = maxX - minX;
-      const h = maxY - minY;
-
-      if (w < 10 || h < 10) {
-        this.showToast(t('cropTooSmall'));
-        return;
-      }
-
-      tempCanvas.width = w;
-      tempCanvas.height = h;
-
-      tempCtx.beginPath();
-      tempCtx.moveTo(quad.tl.x - minX, quad.tl.y - minY);
-      tempCtx.lineTo(quad.tr.x - minX, quad.tr.y - minY);
-      tempCtx.lineTo(quad.br.x - minX, quad.br.y - minY);
-      tempCtx.lineTo(quad.bl.x - minX, quad.bl.y - minY);
-      tempCtx.closePath();
-      tempCtx.clip();
-
-      tempCtx.drawImage(this.canvas, -minX, -minY);
-
-      this.canvas.width = w;
-      this.canvas.height = h;
-      this.ctx.drawImage(tempCanvas, 0, 0);
-
-      this.state.canvasWidth = w;
-      this.state.canvasHeight = h;
-      this.state.currentImageData = this.ctx.getImageData(0, 0, w, h);
-      this.state.imageLoaded = true;
-      this.showToast(t('cropSuccess'));
-
-      const croppedImage = new Image();
-      croppedImage.src = this.canvas.toDataURL();
-      croppedImage.onload = () => {
-        this.setCurrentPageImage(croppedImage);
-        this.applyFilters();
-      };
-    } catch (err) {
-      console.error("Quad crop error:", err);
-      this.showToast(t('error'));
-    }
+    this.cancelManualCrop();
   },
 
   cancelManualCrop() {

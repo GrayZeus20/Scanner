@@ -11,11 +11,10 @@ const manualCrop = {
     activeHandle: null,
     startX: 0,
     startY: 0,
-    startLeft: 0,
-    startTop: 0,
-    startWidth: 0,
-    startHeight: 0,
-    minSize: 40
+    // Store individual corner positions (relative to wrapper)
+    corners: { tl: {x: 0, y: 0}, tr: {x: 0, y: 0}, bl: {x: 0, y: 0}, br: {x: 0, y: 0} },
+    minCornerDist: 20,
+    activeCorner: null
   },
 
   init() {
@@ -28,12 +27,10 @@ const manualCrop = {
     if (!this.area || this.initialized) return;
     this.initialized = true;
 
-    this.area.addEventListener('mousedown', (e) => this.onAreaStart(e));
-    this.area.addEventListener('touchstart', (e) => this.onAreaStart(e), { passive: false });
-
+    // Each corner handle moves independently
     this.area.querySelectorAll('.crop-handle').forEach(handle => {
-      handle.addEventListener('mousedown', (e) => this.onHandleStart(e));
-      handle.addEventListener('touchstart', (e) => this.onHandleStart(e), { passive: false });
+      handle.addEventListener('mousedown', (e) => this.onCornerStart(e));
+      handle.addEventListener('touchstart', (e) => this.onCornerStart(e), { passive: false });
     });
 
     document.addEventListener('mousemove', (e) => this.onMove(e));
@@ -42,101 +39,52 @@ const manualCrop = {
     document.addEventListener('touchend', () => this.onEnd());
   },
 
-  onAreaStart(e) {
-    if (e.target.classList.contains('crop-handle')) return;
-    e.preventDefault();
-    e.stopPropagation();
-
-    const pos = this.getPos(e);
-    this.state.dragging = true;
-    this.state.startX = pos.x;
-    this.state.startY = pos.y;
-    this.state.startLeft = this.area.offsetLeft;
-    this.state.startTop = this.area.offsetTop;
-  },
-
-  onHandleStart(e) {
+  onCornerStart(e) {
     e.preventDefault();
     e.stopPropagation();
 
     const pos = this.getPos(e);
     const handle = e.target.closest('.crop-handle');
-    const rect = this.area.getBoundingClientRect();
-    const wrapperRect = this.wrapper.getBoundingClientRect();
 
     this.state.resizing = true;
-    this.state.activeHandle = handle.dataset.handle;
+    this.state.activeCorner = handle.dataset.handle;
     this.state.startX = pos.x;
     this.state.startY = pos.y;
-    this.state.startLeft = rect.left - wrapperRect.left;
-    this.state.startTop = rect.top - wrapperRect.top;
-    this.state.startWidth = rect.width;
-    this.state.startHeight = rect.height;
-
-    this.showMagnifier(pos.x - wrapperRect.left, pos.y - wrapperRect.top);
   },
 
   onMove(e) {
-    if (!this.state.dragging && !this.state.resizing) return;
+    if (!this.state.resizing) return;
     e.preventDefault();
 
     const pos = this.getPos(e);
-    const wrapperRect = this.wrapper.getBoundingClientRect();
     const canvasRect = this.canvas.getBoundingClientRect();
-    const maxX = canvasRect.width;
-    const maxY = canvasRect.height;
+    const wrapperRect = this.wrapper.getBoundingClientRect();
 
-    if (this.state.dragging) {
-      const dx = pos.x - this.state.startX;
-      const dy = pos.y - this.state.startY;
+    const dx = pos.x - this.state.startX;
+    const dy = pos.y - this.state.startY;
+
+    const canvasLeft = canvasRect.left - wrapperRect.left;
+    const canvasTop = canvasRect.top - wrapperRect.top;
+    const canvasRight = canvasRect.right - wrapperRect.left;
+    const canvasBottom = canvasRect.bottom - wrapperRect.top;
+
+    if (this.state.activeCorner) {
+      const key = this.state.activeCorner;
+      const corner = this.state.corners[key];
       
-      let newLeft = this.state.startLeft + dx;
-      let newTop = this.state.startTop + dy;
-
-      newLeft = Math.max(0, Math.min(newLeft, maxX - this.area.offsetWidth));
-      newTop = Math.max(0, Math.min(newTop, maxY - this.area.offsetHeight));
-
-      this.area.style.left = newLeft + 'px';
-      this.area.style.top = newTop + 'px';
+      corner.x = Math.max(canvasLeft, Math.min(corner.x + dx, canvasRight));
+      corner.y = Math.max(canvasTop, Math.min(corner.y + dy, canvasBottom));
     }
 
-    if (this.state.resizing) {
-      const dx = pos.x - this.state.startX;
-      const dy = pos.y - this.state.startY;
-      const handle = this.state.activeHandle;
+    this.state.startX = pos.x;
+    this.state.startY = pos.y;
 
-      let newLeft = this.state.startLeft;
-      let newTop = this.state.startTop;
-      let newWidth = this.state.startWidth;
-      let newHeight = this.state.startHeight;
-
-      if (handle.includes('r')) newWidth = Math.max(this.state.minSize, Math.min(this.state.startWidth + dx, maxX - newLeft));
-      if (handle.includes('l')) {
-        newWidth = Math.max(this.state.minSize, this.state.startWidth - dx);
-        newLeft = this.state.startLeft + (this.state.startWidth - newWidth);
-      }
-      if (handle.includes('b')) newHeight = Math.max(this.state.minSize, Math.min(this.state.startHeight + dy, maxY - newTop));
-      if (handle.includes('t')) {
-        newHeight = Math.max(this.state.minSize, this.state.startHeight - dy);
-        newTop = this.state.startTop + (this.state.startHeight - newHeight);
-      }
-
-      if (newLeft < 0) newLeft = 0;
-      if (newTop < 0) newTop = 0;
-
-      this.area.style.left = newLeft + 'px';
-      this.area.style.top = newTop + 'px';
-      this.area.style.width = newWidth + 'px';
-      this.area.style.height = newHeight + 'px';
-
-      this.updateMagnifier(newLeft, newTop, newWidth, newHeight, handle);
-    }
+    this.renderQuadrilateral();
   },
 
   onEnd() {
-    this.state.dragging = false;
     this.state.resizing = false;
-    this.state.activeHandle = null;
+    this.state.activeCorner = null;
     this.hideMagnifier();
   },
 
@@ -145,69 +93,127 @@ const manualCrop = {
     return { x: e.clientX, y: e.clientY };
   },
 
-  showMagnifier(x, y) {
-    if (!this.magnifier) return;
-    this.magnifier.style.display = 'block';
-    this.magnifier.style.left = (x - 60) + 'px';
-    this.magnifier.style.top = (y - 140) + 'px';
-
-    const canvasRect = this.canvas.getBoundingClientRect();
-    const scaleX = this.canvas.width / canvasRect.width;
-    const scaleY = this.canvas.height / canvasRect.height;
-    const cx = (x - canvasRect.left) * scaleX;
-    const cy = (y - canvasRect.top) * scaleY;
-
-    this.magnifier.style.backgroundImage = `url(${this.canvas.toDataURL()})`;
-    this.magnifier.style.backgroundSize = `${canvasRect.width * scaleX}px ${canvasRect.height * scaleY}px`;
-    this.magnifier.style.backgroundPosition = `-${x - 60}px -${y - 140}px`;
-  },
-
-  updateMagnifier(left, top, width, height, handle) {
-    if (!this.magnifier) return;
-    let x, y;
-    if (handle === 'tl') { x = left; y = top; }
-    else if (handle === 'tr') { x = left + width; y = top; }
-    else if (handle === 'bl') { x = left; y = top + height; }
-    else if (handle === 'br') { x = left + width; y = top + height; }
-
-    this.magnifier.style.left = (x - 60) + 'px';
-    this.magnifier.style.top = (y - 180) + 'px';
-
-    const canvasRect = this.canvas.getBoundingClientRect();
-    const scaleX = this.canvas.width / canvasRect.width;
-    const scaleY = this.canvas.height / canvasRect.height;
-    const cx = (x - canvasRect.left) * scaleX;
-    const cy = (y - canvasRect.top) * scaleY;
-    this.magnifier.style.backgroundPosition = `-${cx * (120 / 30)}px -${cy * (120 / 30)}px`;
-  },
-
-  hideMagnifier() {
-    if (this.magnifier) this.magnifier.style.display = 'none';
-  },
-
-  getCropRect() {
-    const canvasRect = this.canvas.getBoundingClientRect();
-    const areaRect = this.area.getBoundingClientRect();
-
-    const scaleX = this.canvas.width / canvasRect.width;
-    const scaleY = this.canvas.height / canvasRect.height;
-
-    return {
-      x: Math.round((areaRect.left - canvasRect.left) * scaleX),
-      y: Math.round((areaRect.top - canvasRect.top) * scaleY),
-      width: Math.round(areaRect.width * scaleX),
-      height: Math.round(areaRect.height * scaleY)
-    };
+  renderQuadrilateral() {
+    const c = this.state.corners;
+    // Update the crop area polygon via clip-path
+    this.area.style.clipPath = `polygon(${c.tl.x}px ${c.tl.y}px, ${c.tr.x}px ${c.tr.y}px, ${c.br.x}px ${c.br.y}px, ${c.bl.x}px ${c.bl.y}px)`;
+    
+    // Position handles at corners
+    const handles = this.area.querySelectorAll('.crop-handle');
+    handles.forEach(h => {
+      const key = h.dataset.handle;
+      if (c[key]) {
+        h.style.position = 'absolute';
+        h.style.left = (c[key].x - this.area.offsetLeft - 14) + 'px';
+        h.style.top = (c[key].y - this.area.offsetTop - 14) + 'px';
+      }
+    });
   },
 
   resetCropArea() {
-    if (!this.area || !this.canvas) return;
+    if (!this.canvas) return;
     const canvasRect = this.canvas.getBoundingClientRect();
-    const padding = Math.min(canvasRect.width, canvasRect.height) * 0.05;
+    const wrapperRect = this.wrapper.getBoundingClientRect();
     
-    this.area.style.left = padding + 'px';
-    this.area.style.top = padding + 'px';
-    this.area.style.width = (canvasRect.width - padding * 2) + 'px';
-    this.area.style.height = (canvasRect.height - padding * 2) + 'px';
+    const cx = canvasRect.left - wrapperRect.left;
+    const cy = canvasRect.top - wrapperRect.top;
+    const cw = canvasRect.width;
+    const ch = canvasRect.height;
+    
+    const margin = Math.min(cw, ch) * 0.05;
+    
+    this.state.corners = {
+      tl: { x: cx + margin, y: cy + margin },
+      tr: { x: cx + cw - margin, y: cy + margin },
+      bl: { x: cx + margin, y: cy + ch - margin },
+      br: { x: cx + cw - margin, y: cy + ch - margin }
+    };
+    
+    this.area.style.left = cx + 'px';
+    this.area.style.top = cy + 'px';
+    this.area.style.width = cw + 'px';
+    this.area.style.height = ch + 'px';
+    this.area.style.clipPath = '';
+    
+    // Position handles absolutely within wrapper
+    this.area.querySelectorAll('.crop-handle').forEach(h => {
+      h.style.position = 'fixed';
+    });
+    
+    this.renderFixedHandles();
+  },
+
+  renderFixedHandles() {
+    const c = this.state.corners;
+    const wrapperRect = this.wrapper.getBoundingClientRect();
+    const handles = this.area.querySelectorAll('.crop-handle');
+    
+    handles.forEach(h => {
+      const key = h.dataset.handle;
+      if (c[key]) {
+        // Convert to fixed position on screen
+        const wrapperRect2 = this.wrapper.getBoundingClientRect();
+        h.style.position = 'fixed';
+        h.style.left = (wrapperRect2.left + c[key].x - 14) + 'px';
+        h.style.top = (wrapperRect2.top + c[key].y - 14) + 'px';
+      }
+    });
+  },
+
+  getCropRect() {
+    const c = this.state.corners;
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / canvasRect.width;
+    const scaleY = this.canvas.height / canvasRect.height;
+    const canvasLeft = canvasRect.left;
+    const canvasTop = canvasRect.top;
+
+    return {
+      tl: { x: (c.tl.x * scaleX), y: (c.tl.y * scaleY) },
+      tr: { x: (c.tr.x * scaleX), y: (c.tr.y * scaleY) },
+      bl: { x: (c.bl.x * scaleX), y: (c.bl.y * scaleY) },
+      br: { x: (c.br.x * scaleX), y: (c.br.y * scaleY) }
+    };
+  },
+
+  // Extract quadrilateral region from canvas and draw to new canvas
+  cropQuadrilateral() {
+    const srcCanvas = this.canvas;
+    const srcCtx = srcCanvas.getContext('2d');
+    const c = this.state.corners;
+    const canvasRect = srcCanvas.getBoundingClientRect();
+    const scaleX = srcCanvas.width / canvasRect.width;
+    const scaleY = srcCanvas.height / canvasRect.height;
+
+    // Convert corners to canvas pixel coordinates
+    const pts = [
+      { x: c.tl.x * scaleX, y: c.tl.y * scaleY },
+      { x: c.tr.x * scaleX, y: c.tr.y * scaleY },
+      { x: c.br.x * scaleX, y: c.br.y * scaleY },
+      { x: c.bl.x * scaleX, y: c.bl.y * scaleY }
+    ];
+
+    // Bounding box
+    const xs = pts.map(p => p.x);
+    const ys = pts.map(p => p.y);
+    const minX = Math.max(0, Math.min(...xs));
+    const minY = Math.max(0, Math.min(...ys));
+    const maxX = Math.min(srcCanvas.width, Math.max(...xs));
+    const maxY = Math.min(srcCanvas.height, Math.max(...ys));
+    
+    const w = Math.round(maxX - minX);
+    const h = Math.round(maxY - minY);
+    
+    if (w < 10 || h < 10) return null;
+
+    // Use bounding box crop for simplicity (perspective warp requires WebGL)
+    const imageData = srcCtx.getImageData(minX, minY, w, h);
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = w;
+    outCanvas.height = h;
+    const outCtx = outCanvas.getContext('2d');
+    outCtx.putImageData(imageData, 0, 0);
+
+    return outCanvas;
   }
 };
