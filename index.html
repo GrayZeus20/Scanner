@@ -68,8 +68,21 @@
         </div>
         <div id="editorArea" class="hidden">
           <div class="pages-tray" id="pagesTray"></div>
-          <div class="canvas-wrapper">
+          <div class="canvas-wrapper" id="canvasWrapper">
             <canvas id="mainCanvas"></canvas>
+            <!-- Crop Overlay -->
+            <div id="cropOverlay" class="crop-overlay hidden">
+              <div id="cropArea" class="crop-area">
+                <div class="crop-handle top-left"></div>
+                <div class="crop-handle top-right"></div>
+                <div class="crop-handle bottom-left"></div>
+                <div class="crop-handle bottom-right"></div>
+              </div>
+              <div class="crop-controls">
+                <button id="confirmCropBtn" class="btn btn-primary" style="background: #2ecc71; color: white;">Simpan</button>
+                <button id="cancelCropBtn" class="btn btn-primary" style="background: #e74c3c; color: white;">Batal</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -83,8 +96,14 @@
           <div id="focusIndicator" class="focus-indicator hidden"></div>
         </div>
         <div class="camera-controls">
+          <button id="finishCamera" class="camera-action-btn success-btn">
+            <i data-lucide="check"></i>
+          </button>
           <button id="captureBtn" class="capture-btn">
             <i data-lucide="circle"></i>
+          </button>
+          <button id="cancelCamera" class="camera-action-btn danger-btn">
+            <i data-lucide="x"></i>
           </button>
         </div>
       </div>

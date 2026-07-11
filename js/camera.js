@@ -2,15 +2,19 @@ const camera = {
   stream: null,
   video: document.getElementById('video'),
   captureHandlerBound: false,
+  capturedCount: 0,
 
   bindCaptureHandler() {
     if (this.captureHandlerBound) return;
     document.getElementById('captureBtn').addEventListener('click', () => this.capture());
+    document.getElementById('finishCamera').addEventListener('click', () => this.finish());
+    document.getElementById('cancelCamera').addEventListener('click', () => this.cancel());
     
     // Add Tap to Focus behavior
     const videoContainer = document.getElementById('cameraView');
     videoContainer.addEventListener('click', (e) => {
-      if (e.target.id === 'captureBtn' || e.target.closest('#captureBtn')) return;
+      const t = e.target;
+      if (t.id === 'captureBtn' || t.id === 'finishCamera' || t.id === 'cancelCamera' || t.closest('#captureBtn') || t.closest('.camera-action-btn')) return;
       this.tapToFocus(e);
     });
     
@@ -23,8 +27,8 @@ const camera = {
       return;
     }
 
+    this.capturedCount = 0;
     try {
-      // Use 'ideal' instead of 'max' to allow the camera driver to choose the best resolution for focus
       const constraints = {
         video: { 
           facingMode: 'environment',
@@ -36,7 +40,6 @@ const camera = {
       this.stream = await navigator.mediaDevices.getUserMedia(constraints);
       this.video.srcObject = this.stream;
       
-      // Wait for video metadata to be loaded before applying advanced constraints
       await new Promise((resolve, reject) => {
         if (this.video.readyState >= 2) {
           resolve();
@@ -56,6 +59,7 @@ const camera = {
 
       this.applyCameraEnhancements();
       document.getElementById('cameraView').classList.remove('hidden');
+      lucide.createIcons();
     } catch (err) {
       console.error(err);
       if (err?.name === 'NotFoundError') {
@@ -76,12 +80,10 @@ const camera = {
       const capabilities = track.getCapabilities();
       const advancedConstraints = [];
 
-      // 1. Continuous Auto-Focus (CRITICAL)
       if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
         advancedConstraints.push({ focusMode: 'continuous' });
       }
 
-      // 2. Exposure and White Balance for better clarity
       if (capabilities.exposureMode && capabilities.exposureMode.includes('continuous')) {
         advancedConstraints.push({ exposureMode: 'continuous' });
       }
@@ -89,7 +91,6 @@ const camera = {
         advancedConstraints.push({ whiteBalanceMode: 'continuous' });
       }
 
-      // 3. Try to apply constraints in parts to ensure the main ones (like focus) succeed
       if (advancedConstraints.length > 0) {
         await track.applyConstraints({ advanced: advancedConstraints });
         console.log('Camera enhancements applied (Continuous Focus Enabled)');
@@ -108,9 +109,39 @@ const camera = {
 
     const dataUrl = canvas.toDataURL('image/jpeg');
     app.loadImageFromSrc(dataUrl);
+    
+    this.capturedCount++;
+    app.showToast('Foto ke-' + this.capturedCount + ' diambil');
+    
+    // Flash effect
+    const video = document.getElementById('video');
+    video.style.opacity = '0.5';
+    setTimeout(() => { video.style.opacity = '1'; }, 100);
+  },
 
+  finish() {
+    if (this.capturedCount > 0) {
+      app.showToast(this.capturedCount + ' foto berhasil disimpan');
+    }
     this.stop();
-    document.getElementById('cameraView').classList.add('hidden');
+  },
+
+  cancel() {
+    if (this.capturedCount > 0) {
+      app.showToast('Pengambilan dibatalkan');
+    }
+    this.stop();
+  },
+
+  stop() {
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
+    }
+    if (this.video) {
+      this.video.srcObject = null;
+    }
+    document.getElementById('cameraView')?.classList.add('hidden');
   },
 
   tapToFocus(e) {
@@ -121,7 +152,6 @@ const camera = {
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
 
-    // Show focus indicator
     const indicator = document.getElementById('focusIndicator');
     if (indicator) {
       indicator.style.left = `${e.clientX - rect.left}px`;
@@ -134,12 +164,10 @@ const camera = {
       }, 800);
     }
 
-    // Try to apply point of interest if supported
     try {
       if (typeof track.getCapabilities === 'function') {
         const caps = track.getCapabilities();
         if (caps.focusMode && caps.focusMode.includes('continuous')) {
-          // Map tap coordinates to video content accounting for object-fit: cover
           const vw = this.video.videoWidth;
           const vh = this.video.videoHeight;
           const cw = rect.width;
@@ -165,17 +193,6 @@ const camera = {
     } catch (err) {
       console.warn('Focus re-trigger failed:', err);
     }
-  },
-
-  stop() {
-    if (this.stream) {
-      this.stream.getTracks().forEach(track => track.stop());
-      this.stream = null;
-    }
-    if (this.video) {
-      this.video.srcObject = null;
-    }
-    document.getElementById('cameraView')?.classList.add('hidden');
   },
 
   showError(type) {

@@ -103,9 +103,11 @@ const app = {
     document.getElementById('closeToolsSheet').addEventListener('click', () => document.getElementById('toolsSheet').classList.add('hidden'));
 
     document.getElementById('toolCropBtn').addEventListener('click', () => {
-      this.autoCrop();
+      this.startManualCrop();
       document.getElementById('toolsSheet').classList.add('hidden');
     });
+    document.getElementById('confirmCropBtn').addEventListener('click', () => this.confirmManualCrop());
+    document.getElementById('cancelCropBtn').addEventListener('click', () => this.cancelManualCrop());
     document.getElementById('toolFilterBtn').addEventListener('click', () => {
       document.getElementById('filterSheet').classList.remove('hidden');
       document.getElementById('toolsSheet').classList.add('hidden');
@@ -474,6 +476,71 @@ const app = {
     }
 
     ctx.putImageData(new ImageData(output, w, h), 0, 0);
+  },
+
+  startManualCrop() {
+    if (!this.state.imageLoaded) {
+      this.showToast(t('noImage'));
+      return;
+    }
+    const overlay = document.getElementById('cropOverlay');
+    overlay.classList.remove('hidden');
+    this.state.isCropping = true;
+  },
+
+  confirmManualCrop() {
+    const cropArea = document.getElementById('cropArea');
+    const canvasWrapper = document.getElementById('canvasWrapper');
+    const canvas = this.canvas;
+
+    if (!cropArea || !canvasWrapper || !canvas) return;
+
+    const wrapperRect = canvasWrapper.getBoundingClientRect();
+    const cropRect = cropArea.getBoundingClientRect();
+
+    const scaleX = canvas.width / wrapperRect.width;
+    const scaleY = canvas.height / wrapperRect.height;
+
+    const x = (cropRect.left - wrapperRect.left) * scaleX;
+    const y = (cropRect.top - wrapperRect.top) * scaleY;
+    const w = cropRect.width * scaleX;
+    const h = cropRect.height * scaleY;
+
+    if (w < 10 || h < 10) {
+        this.showToast("Area potong terlalu kecil");
+        return;
+    }
+
+    try {
+      const imageData = this.ctx.getImageData(x, y, w, h);
+      canvas.width = w;
+      canvas.height = h;
+      this.ctx.putImageData(imageData, 0, 0);
+
+      this.state.canvasWidth = w;
+      this.state.canvasHeight = h;
+      this.state.currentImageData = this.ctx.getImageData(0, 0, w, h);
+      this.state.imageLoaded = true;
+      this.showToast(t('cropSuccess'));
+
+      // Update page with new image data
+      const croppedImage = new Image();
+      croppedImage.src = canvas.toDataURL();
+      croppedImage.onload = () => {
+          this.setCurrentPageImage(croppedImage);
+          this.applyFilters();
+      };
+    } catch (err) {
+      console.error("Crop error:", err);
+      this.showToast(t('error'));
+    }
+
+    this.cancelManualCrop();
+  },
+
+  cancelManualCrop() {
+    document.getElementById('cropOverlay')?.classList.add('hidden');
+    this.state.isCropping = false;
   },
 
   autoCrop() {

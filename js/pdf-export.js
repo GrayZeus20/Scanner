@@ -63,16 +63,21 @@ const pdfExport = {
       throw new Error('Canvas tidak valid untuk ekspor.');
     }
 
-    // --- FIX: Ensure white background for image export ---
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = canvas.width;
-    tempCanvas.height = canvas.height;
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.fillStyle = '#FFFFFF';
-    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-    tempCtx.drawImage(canvas, 0, 0);
-
-    const dataURL = tempCanvas.toDataURL(mimeType, quality);
+    let dataURL;
+    if (format === 'png') {
+        // PNG supports transparency: no background fill needed
+        dataURL = canvas.toDataURL(mimeType, quality);
+    } else {
+        // JPEG doesn't support transparency: add white background
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.fillStyle = '#FFFFFF';
+        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+        tempCtx.drawImage(canvas, 0, 0);
+        dataURL = tempCanvas.toDataURL(mimeType, quality);
+    }
 
     const link = document.createElement('a');
     link.download = 'scan_' + Date.now() + '.' + format;
