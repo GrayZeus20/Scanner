@@ -1,47 +1,151 @@
+/* ─── Dark Mode ────────────────────────────────────────────────── */
 .dark-mode {
-  --bg: #121212;
-  --surface: #1e1e1e;
-  --text: #e0e0e0;
-  --text-secondary: #a0a0a0;
-  --border: #333333;
-  --nav-btn-active: #3f51b5;
+  --color-bg: #0F172A;
+  --color-surface: #1E293B;
+  --color-foreground: #F1F5F9;
+  --color-text: #E2E8F0;
+  --color-text-secondary: #94A3B8;
+  --color-text-tertiary: #64748B;
+  --color-muted: #1E293B;
+  --color-border: #334155;
+  --color-accent-light: rgba(37, 99, 235, 0.15);
+  --color-primary: #334155;
+  --color-on-primary: #F8FAFC;
 }
 
-.dark-mode body {
-  background: var(--bg);
-  color: var(--text);
+.dark-mode #header {
+  background: var(--color-surface);
+  border-color: var(--color-border);
 }
 
-.dark-mode #header,
-.dark-mode #bottomNav,
-.dark-mode .sheet-panel,
-.dark-mode .history-item .history-meta {
-  background: var(--surface);
-  border-color: var(--border);
+.dark-mode #bottomNav {
+  background: var(--color-surface);
+  border-color: var(--color-border);
 }
 
-.dark-mode .lang-select {
-  background: var(--bg);
-  border-color: var(--border);
-  color: var(--text);
+.dark-mode .sheet-panel {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.dark-mode .sheet-panel {
+  border-left-color: var(--color-border);
 }
 
 .dark-mode .canvas-wrapper {
-  background: #000;
+  background: #0A0F1A;
 }
 
-.dark-mode .export-btn,
+.dark-mode #mainCanvas {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
 .dark-mode .btn-secondary {
-  background: var(--surface);
-  border-color: var(--border);
-  color: var(--text);
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
 }
 
-.dark-mode .export-btn:hover,
 .dark-mode .btn-secondary:hover {
-  background: var(--border);
+  background: var(--color-border);
 }
 
-.dark-mode .history-meta {
-  color: var(--text);
+.dark-mode .export-btn {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.dark-mode .export-btn:hover {
+  background: var(--color-accent-light);
+  border-color: var(--color-accent);
+}
+
+.dark-mode .history-item {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.dark-mode .history-item:hover {
+  border-color: var(--color-text-tertiary);
+}
+
+.dark-mode .history-meta span {
+  color: var(--color-foreground);
+}
+
+.dark-mode .history-meta small {
+  color: var(--color-text-tertiary);
+}
+
+.dark-mode .lang-select {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.dark-mode .filter-slider {
+  background: var(--color-border);
+}
+
+.dark-mode .filter-action-btn {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.dark-mode .filter-action-btn:hover {
+  background: var(--color-accent-light);
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.dark-mode .ocr-result {
+  background: #0F172A;
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.dark-mode #aiResultArea {
+  background: #0F172A;
+  border-color: var(--color-border);
+  border-left-color: var(--color-accent);
+}
+
+.dark-mode .api-key-input {
+  background: #0F172A;
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.dark-mode .icon-btn:hover {
+  background: var(--color-border);
+  color: var(--color-foreground);
+}
+
+.dark-mode .nav-btn:hover {
+  background: var(--color-border);
+  color: var(--color-foreground);
+}
+
+.dark-mode .btn-danger:hover {
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.dark-mode .toast {
+  background: var(--color-foreground);
+  color: var(--color-bg);
+}
+
+.dark-mode .toggle-slider {
+  background: var(--color-border);
+}
+
+.dark-mode .frame-guide {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+@media (min-width: 1024px) {
+  .dark-mode body {
+    background: #0A0F1A;
+  }
 }

@@ -6,7 +6,7 @@
   <title>WebScanner</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/dark-mode.css">
   <link rel="manifest" href="manifest.json">
@@ -79,8 +79,8 @@
                 <div class="crop-handle bottom-right"></div>
               </div>
               <div class="crop-controls">
-                <button id="confirmCropBtn" class="btn btn-primary" style="background: #2ecc71; color: white;">Simpan</button>
-                <button id="cancelCropBtn" class="btn btn-primary" style="background: #e74c3c; color: white;">Batal</button>
+                <button id="confirmCropBtn" class="btn btn-primary" style="background: #22C55E;">Simpan</button>
+                <button id="cancelCropBtn" class="btn btn-danger" style="width: auto;">Batal</button>
               </div>
             </div>
           </div>
@@ -142,17 +142,26 @@
         </button>
       </div>
       <div class="sheet-body">
-        <button id="toolCropBtn" class="export-btn">
+        <button id="toolCropBtn" class="tool-action-btn">
           <i data-lucide="crop"></i>
-          <span data-i18n="autoCrop">Potong</span>
+          <div>
+            <strong data-i18n="autoCrop">Potong</strong>
+            <small>Pilih area potong secara manual</small>
+          </div>
         </button>
-        <button id="toolFilterBtn" class="export-btn">
+        <button id="toolFilterBtn" class="tool-action-btn">
           <i data-lucide="sliders-horizontal"></i>
-          <span data-i18n="filters">Filter</span>
+          <div>
+            <strong data-i18n="filters">Filter</strong>
+            <small>Atur kecerahan, kontras, dll</small>
+          </div>
         </button>
-        <button id="toolOcrBtn" class="export-btn">
+        <button id="toolOcrBtn" class="tool-action-btn">
           <i data-lucide="type"></i>
-          <span data-i18n="ocr">Teks (OCR)</span>
+          <div>
+            <strong data-i18n="ocr">Teks (OCR)</strong>
+            <small>Ekstrak teks dari gambar</small>
+          </div>
         </button>
       </div>
     </div>
@@ -272,17 +281,17 @@
       </div>
       <div class="sheet-body">
         <div id="ocrResult" class="ocr-result" contenteditable="true">
-          <p style="color: var(--text-secondary)"><i data-lucide="loader"></i> <span data-i18n="processing">Memproses...</span></p>
+          <p style="color: var(--color-text-secondary)"><i data-lucide="loader"></i> <span data-i18n="processing">Memproses...</span></p>
         </div>
-        <button id="copyOcrBtn" class="btn btn-primary" style="margin-top: 16px;">
+        <button id="copyOcrBtn" class="btn btn-primary">
           <i data-lucide="copy"></i>
           <span data-i18n="copyText">Salin Teks</span>
         </button>
-        <button id="aiAnalyzeBtn" class="btn btn-secondary" style="margin-top: 16px;">
+        <button id="aiAnalyzeBtn" class="btn btn-secondary">
           <i data-lucide="sparkles"></i>
           <span>Analisis AI</span>
         </button>
-        <div id="aiResultArea" class="ocr-result" style="margin-top: 16px; display: none;"></div>
+        <div id="aiResultArea" class="ocr-result hidden"></div>
       </div>
     </div>
 

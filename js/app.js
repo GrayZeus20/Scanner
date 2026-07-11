@@ -22,6 +22,12 @@ const app = {
   canvas: document.getElementById('mainCanvas'),
   ctx: document.getElementById('mainCanvas').getContext('2d'),
 
+  setActiveNav(id) {
+    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+    const btn = document.getElementById(id);
+    if (btn) btn.classList.add('active');
+  },
+
   escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({
       '&': '&amp;',
@@ -77,7 +83,6 @@ const app = {
 
     document.getElementById('fileInput').addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
-        // Handle multiple files
         Array.from(e.target.files).forEach(file => {
           if (file.type.startsWith('image/')) {
             this.loadFile(file);
@@ -88,12 +93,14 @@ const app = {
     });
 
     document.getElementById('navHistory').addEventListener('click', () => {
+      this.setActiveNav('navHistory');
       camera.stop();
       this.showHistory();
     });
     document.getElementById('closeHistory').addEventListener('click', () => {
       camera.stop();
       document.getElementById('historyView').classList.add('hidden');
+      this.setActiveNav(null);
     });
 
     document.getElementById('navTools').addEventListener('click', () => {
@@ -571,7 +578,6 @@ const app = {
 
   rotate(deg) {
     if (!this.state.imageLoaded) return;
-    this.state.rotation = (this.state.rotation + deg) % 360;
 
     const canvas = this.canvas;
     const ctx = this.ctx;
@@ -579,7 +585,7 @@ const app = {
     const img = page ? page.originalImage : null;
     if (!img) return;
 
-    const radians = (this.state.rotation * Math.PI) / 180;
+    const radians = (deg * Math.PI) / 180;
     const cos = Math.abs(Math.cos(radians));
     const sin = Math.abs(Math.sin(radians));
     const newW = Math.ceil(img.width * cos + img.height * sin);
@@ -601,6 +607,7 @@ const app = {
       this.setCurrentPageImage(transformedImage);
       this.state.canvasWidth = canvas.width;
       this.state.canvasHeight = canvas.height;
+      this.state.rotation = 0;
       this.state.imageLoaded = true;
       this.applyFilters();
     };
@@ -746,7 +753,7 @@ const app = {
     btn.disabled = true;
     btn.innerHTML = `<i data-lucide="loader"></i> Analisis...`;
     lucide.createIcons();
-    resultDiv.style.display = 'block';
+    resultDiv.classList.remove('hidden');
     resultDiv.innerText = 'Memulai analisis...';
 
     try {
@@ -759,11 +766,10 @@ const app = {
         html += `<span class="ai-tag">Cloud AI (GPT-4o-mini)</span>`;
         const cloudResult = await aiEngine.analyzeCloud(text);
         if (cloudResult.fullAnalysis) {
-          html += `<div style="margin-top: 8px; white-space: pre-wrap; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 12px;">${this.escapeHtml(cloudResult.fullAnalysis)}</div>`;
+          html += `<div style="margin-top: 8px; white-space: pre-wrap; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 12px;">${this.escapeHtml(cloudResult.fullAnalysis)}</div>`;
         }
-        // Add local data as structured supplement
         const structuredText = this.escapeHtml(JSON.stringify(localResult.structuredData, null, 2));
-        html += `<span class="ai-tag">Data Lokal</span><pre style="font-size: 12px; white-space: pre-wrap; margin-top: 4px; color: var(--text-secondary);">${structuredText}</pre>`;
+        html += `<span class="ai-tag">Data Lokal</span><pre style="font-size: 12px; white-space: pre-wrap; margin-top: 4px; color: var(--color-text-secondary);">${structuredText}</pre>`;
       } else {
         // Full Local Experience
         html += `<div style="white-space: pre-wrap;">${this.escapeHtml(localResult.fullAnalysis)}</div>`;
@@ -789,7 +795,7 @@ const app = {
     lucide.createIcons();
     const resultDiv = document.getElementById('ocrResult');
     resultDiv.innerHTML = `<p><i data-lucide="loader"></i> ${t('processing')}</p>`;
-    document.getElementById('aiResultArea').style.display = 'none';
+    document.getElementById('aiResultArea').classList.add('hidden');
     lucide.createIcons();
 
     try {
