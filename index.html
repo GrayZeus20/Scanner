@@ -24,15 +24,18 @@
           <span class="logo-text" data-i18n="appName">WebScanner</span>
         </div>
       </div>
-      <div class="header-right">
-        <select id="langSwitcher" class="lang-select">
-          <option value="id">🇮🇩 Indonesia</option>
-          <option value="en">🇬🇧 English</option>
-        </select>
-        <button id="darkToggle" class="icon-btn" title="Toggle Dark Mode">
-          <i data-lucide="moon"></i>
-        </button>
-      </div>
+        <div class="header-right">
+          <select id="langSwitcher" class="lang-select">
+            <option value="id">🇮🇩 Indonesia</option>
+            <option value="en">🇬🇧 English</option>
+          </select>
+          <button id="settingsBtn" class="icon-btn" title="Settings">
+            <i data-lucide="settings"></i>
+          </button>
+          <button id="darkToggle" class="icon-btn" title="Toggle Dark Mode">
+            <i data-lucide="moon"></i>
+          </button>
+        </div>
     </header>
 
     <!-- Main Content -->
@@ -224,6 +227,21 @@
       </div>
     </div>
 
+    <!-- Settings Sheet -->
+    <div id="settingsSheet" class="sheet-panel hidden">
+      <div class="sheet-header">
+        <h3 data-i18n="settings">Pengaturan AI</h3>
+        <button id="closeSettings" class="icon-btn"><i data-lucide="x"></i></button>
+      </div>
+      <div class="sheet-body">
+        <div class="filter-group">
+          <label>OpenAI API Key</label>
+          <input type="password" id="apiKeyInput" class="filter-slider" style="padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-sm);" placeholder="sk-...">
+        </div>
+        <button id="saveSettings" class="btn btn-primary">Simpan</button>
+      </div>
+    </div>
+
     <!-- OCR Sheet Panel -->
     <div id="ocrSheet" class="sheet-panel hidden">
       <div class="sheet-header">
@@ -240,6 +258,11 @@
           <i data-lucide="copy"></i>
           <span data-i18n="copyText">Salin Teks</span>
         </button>
+        <button id="aiAnalyzeBtn" class="btn btn-secondary" style="margin-top: 16px;">
+          <i data-lucide="sparkles"></i>
+          <span>Analisis AI</span>
+        </button>
+        <div id="aiResultArea" class="ocr-result" style="margin-top: 16px; display: none;"></div>
       </div>
     </div>
 
@@ -280,6 +303,7 @@
     <input type="file" id="fileInput" accept="image/*" hidden>
   </div>
 
+  <script src="js/ai.js"></script>
   <script src="js/i18n.js"></script>
   <script src="js/camera.js"></script>
   <script src="js/edge-detection.js"></script>

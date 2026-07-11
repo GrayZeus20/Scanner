@@ -112,6 +112,29 @@ const app = {
       navigator.clipboard.writeText(text).then(() => this.showToast(t('saved')));
     });
 
+    // AI Analysis
+    document.getElementById('aiAnalyzeBtn').addEventListener('click', () => this.runAiAnalysis());
+
+    // Settings
+    document.getElementById('settingsBtn').addEventListener('click', () => {
+      document.getElementById('apiKeyInput').value = aiEngine.getApiKey() || '';
+      document.getElementById('settingsSheet').classList.remove('hidden');
+      lucide.createIcons();
+    });
+    document.getElementById('closeSettings').addEventListener('click', () => {
+      document.getElementById('settingsSheet').classList.add('hidden');
+    });
+    document.getElementById('saveSettings').addEventListener('click', () => {
+      const key = document.getElementById('apiKeyInput').value.trim();
+      if (key) {
+        aiEngine.saveApiKey(key);
+        document.getElementById('settingsSheet').classList.add('hidden');
+        this.showToast('API Key tersimpan');
+      } else {
+        this.showToast('Masukkan API Key');
+      }
+    });
+
     this.initFilterControls();
     this.initExportButtons();
   },
@@ -613,6 +636,50 @@ const app = {
     
     this.applyFilters();
   },
+
+  async runAiAnalysis() {
+    const resultDiv = document.getElementById('aiResultArea');
+    const btn = document.getElementById('aiAnalyzeBtn');
+    const text = document.getElementById('ocrResult').innerText;
+
+    if (!text || text === '(No text detected)') {
+      this.showToast('Tidak ada teks untuk dianalisis');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = `<i data-lucide="loader"></i> Analisis...`;
+    lucide.createIcons();
+    resultDiv.style.display = 'block';
+    resultDiv.innerText = 'Memulai analisis...';
+
+    try {
+      // 1. LOCAL AI (Fast, Private)
+      const localResult = await aiEngine.analyzeLocal(text);
+      resultDiv.innerText = `[Local] Jenis: ${localResult.type}\n${localResult.summary}`;
+
+      // 2. CLOUD AI (Opt-in, requires API Key)
+      if (aiEngine.getApiKey()) {
+        resultDiv.innerText += '\n\n--- Analisis Cloud ---\n';
+        const cloudResult = await aiEngine.analyzeCloud(text);
+        if (cloudResult.fullAnalysis) {
+          resultDiv.innerText += cloudResult.fullAnalysis;
+        } else {
+          resultDiv.innerText += cloudResult.summary;
+        }
+      } else {
+        resultDiv.innerText += '\n\nℹ Untuk analisis cloud yang lebih dalam, atur API Key di Pengaturan.';
+      }
+    } catch (err) {
+      resultDiv.innerText = 'Error: ' + err.message;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `<i data-lucide="sparkles"></i> Analisis AI`;
+      lucide.createIcons();
+    }
+  },
+
+  async startOcr() {
     if (!this.state.imageLoaded || !this.state.pages[this.state.currentPageIndex]) {
       this.showToast(t('noImage'));
       return;
@@ -622,6 +689,7 @@ const app = {
     lucide.createIcons();
     const resultDiv = document.getElementById('ocrResult');
     resultDiv.innerHTML = `<p><i data-lucide="loader"></i> ${t('processing')}</p>`;
+    document.getElementById('aiResultArea').style.display = 'none';
     lucide.createIcons();
 
     try {
