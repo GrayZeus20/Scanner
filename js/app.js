@@ -152,19 +152,50 @@ const app = {
       };
       this.state.pages.push(page);
       this.state.currentPageIndex = this.state.pages.length - 1;
-      this.renderPage(this.state.currentPageIndex);
+      
+      // Show editor immediately so buttons appear even if rendering is slow
       this.showEditor();
       this.updatePagesTray();
+      
+      try {
+        this.renderPage(this.state.currentPageIndex);
+      } catch (err) {
+        console.error('Render error:', err);
+        this.showToast(t('error'));
+      }
     };
+    img.onerror = () => this.showToast(t('error'));
     img.src = src;
   },
 
   renderImage(img) {
     const canvas = this.canvas;
     const ctx = this.ctx;
-    canvas.width = img.width;
-    canvas.height = img.height;
-    ctx.drawImage(img, 0, 0);
+    const MAX_SIZE = 2000;
+    
+    let w = img.width;
+    let h = img.height;
+    
+    if (w > MAX_SIZE || h > MAX_SIZE) {
+      const ratio = Math.min(MAX_SIZE / w, MAX_SIZE / h);
+      w = Math.floor(w * ratio);
+      h = Math.floor(h * ratio);
+    }
+    
+    // Scale for High DPI
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    
+    // Store logical dimensions for other functions
+    this.state.canvasWidth = w;
+    this.state.canvasHeight = h;
+    
+    ctx.scale(dpr, dpr);
+    
+    ctx.drawImage(img, 0, 0, w, h);
     this.state.currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     this.state.imageLoaded = true;
     this.applyFilters();
@@ -318,6 +349,10 @@ const app = {
     const ctx = this.ctx;
     const img = page.originalImage;
 
+    // Use logical dimensions for drawing
+    const w = this.state.canvasWidth;
+    const h = this.state.canvasHeight;
+
     ctx.filter = [
       `brightness(${100 + filters.brightness}%)`,
       `contrast(${100 + filters.contrast}%)`,
@@ -327,8 +362,8 @@ const app = {
       filters.invert ? 'invert(100%)' : '',
     ].filter(Boolean).join(' ');
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
 
     if (filters.bw) {
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);

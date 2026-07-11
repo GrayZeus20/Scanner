@@ -16,9 +16,18 @@ const camera = {
     }
 
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      this.stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        } 
+      });
       this.video.srcObject = this.stream;
       document.getElementById('cameraView').classList.remove('hidden');
+
+      // Attempt to enable continuous auto-focus
+      this.applyAutoFocus();
     } catch (err) {
       console.error(err);
       if (err?.name === 'NotFoundError') {
@@ -28,6 +37,23 @@ const camera = {
       } else {
         this.showError('unsupported');
       }
+    }
+  },
+
+  async applyAutoFocus() {
+    const track = this.stream?.getVideoTracks()[0];
+    if (!track) return;
+
+    try {
+      const capabilities = track.getCapabilities();
+      if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+        await track.applyConstraints({
+          advanced: [{ focusMode: 'continuous' }]
+        });
+        console.log('Continuous auto-focus enabled');
+      }
+    } catch (err) {
+      console.warn('Auto-focus not supported on this device:', err);
     }
   },
 
