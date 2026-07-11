@@ -2,8 +2,11 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WebScanner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/dark-mode.css">
   <link rel="manifest" href="manifest.json">
@@ -96,17 +99,9 @@
           <i data-lucide="upload"></i>
           <span data-i18n="importFile">Impor File</span>
         </button>
-        <button id="navCrop" class="nav-btn">
-          <i data-lucide="crop"></i>
-          <span data-i18n="autoCrop">Potong</span>
-        </button>
-        <button id="navFilter" class="nav-btn">
-          <i data-lucide="sliders-horizontal"></i>
-          <span data-i18n="filters">Filter</span>
-        </button>
-        <button id="navOcr" class="nav-btn">
-          <i data-lucide="type"></i>
-          <span data-i18n="ocr">Teks</span>
+        <button id="navTools" class="nav-btn">
+          <i data-lucide="settings-2"></i>
+          <span data-i18n="tools">Alat</span>
         </button>
         <button id="navExport" class="nav-btn">
           <i data-lucide="download"></i>
@@ -114,6 +109,30 @@
         </button>
       </nav>
     </main>
+
+    <!-- Tools Sheet Panel -->
+    <div id="toolsSheet" class="sheet-panel hidden">
+      <div class="sheet-header">
+        <h3 data-i18n="tools">Alat</h3>
+        <button id="closeToolsSheet" class="icon-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="sheet-body">
+        <button id="toolCropBtn" class="export-btn">
+          <i data-lucide="crop"></i>
+          <span data-i18n="autoCrop">Potong</span>
+        </button>
+        <button id="toolFilterBtn" class="export-btn">
+          <i data-lucide="sliders-horizontal"></i>
+          <span data-i18n="filters">Filter</span>
+        </button>
+        <button id="toolOcrBtn" class="export-btn">
+          <i data-lucide="type"></i>
+          <span data-i18n="ocr">Teks (OCR)</span>
+        </button>
+      </div>
+    </div>
 
     <!-- Filter Sheet Panel -->
     <div id="filterSheet" class="sheet-panel hidden">

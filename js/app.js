@@ -81,11 +81,25 @@ const app = {
       document.getElementById('historyView').classList.add('hidden');
     });
 
-    document.getElementById('navFilter').addEventListener('click', () => {
-      document.getElementById('filterSheet').classList.remove('hidden');
+    document.getElementById('navTools').addEventListener('click', () => {
+      document.getElementById('toolsSheet').classList.remove('hidden');
       lucide.createIcons();
     });
-    document.getElementById('closeFilterSheet').addEventListener('click', () => document.getElementById('filterSheet').classList.add('hidden'));
+    document.getElementById('closeToolsSheet').addEventListener('click', () => document.getElementById('toolsSheet').classList.add('hidden'));
+
+    document.getElementById('toolCropBtn').addEventListener('click', () => {
+      this.autoCrop();
+      document.getElementById('toolsSheet').classList.add('hidden');
+    });
+    document.getElementById('toolFilterBtn').addEventListener('click', () => {
+      document.getElementById('filterSheet').classList.remove('hidden');
+      document.getElementById('toolsSheet').classList.add('hidden');
+      lucide.createIcons();
+    });
+    document.getElementById('toolOcrBtn').addEventListener('click', () => {
+      this.startOcr();
+      document.getElementById('toolsSheet').classList.add('hidden');
+    });
 
     document.getElementById('navExport').addEventListener('click', () => {
       document.getElementById('exportSheet').classList.remove('hidden');
@@ -93,10 +107,6 @@ const app = {
     });
     document.getElementById('closeExportSheet').addEventListener('click', () => document.getElementById('exportSheet').classList.add('hidden'));
 
-    document.getElementById('navCrop').addEventListener('click', () => this.autoCrop());
-
-    document.getElementById('navOcr').addEventListener('click', () => this.startOcr());
-    document.getElementById('closeOcrSheet').addEventListener('click', () => document.getElementById('ocrSheet').classList.add('hidden'));
     document.getElementById('copyOcrBtn').addEventListener('click', () => {
       const text = document.getElementById('ocrResult').innerText;
       navigator.clipboard.writeText(text).then(() => this.showToast(t('saved')));
@@ -159,6 +169,7 @@ const app = {
       
       try {
         this.renderPage(this.state.currentPageIndex);
+        this.autoEnhance();
       } catch (err) {
         console.error('Render error:', err);
         this.showToast(t('error'));
@@ -583,7 +594,25 @@ const app = {
     setTimeout(() => toast.remove(), 2000);
   },
 
-  async startOcr() {
+  async   autoEnhance() {
+    // Apply default sharpening for scanning clarity
+    this.state.filters.sharpness = 30;
+    this.state.filters.contrast = 20;
+    
+    // Update UI sliders if they exist
+    const sharpnessSlider = document.getElementById('filterSharpness');
+    if (sharpnessSlider) {
+      sharpnessSlider.value = 30;
+      document.getElementById('sharpnessVal').textContent = '30';
+    }
+    const contrastSlider = document.getElementById('filterContrast');
+    if (contrastSlider) {
+      contrastSlider.value = 20;
+      document.getElementById('contrastVal').textContent = '20';
+    }
+    
+    this.applyFilters();
+  },
     if (!this.state.imageLoaded || !this.state.pages[this.state.currentPageIndex]) {
       this.showToast(t('noImage'));
       return;

@@ -28,7 +28,7 @@
 html, body {
   height: 100%;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
   -webkit-tap-highlight-color: transparent;
@@ -102,6 +102,7 @@ html, body {
   cursor: pointer;
   color: var(--text-secondary);
   transition: background 0.2s;
+  touch-action: manipulation;
 }
 
 .icon-btn:hover {
@@ -183,6 +184,7 @@ html, body {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
+  touch-action: manipulation;
 }
 
 .btn i { width: 18px; height: 18px; }
@@ -303,6 +305,7 @@ html, body {
   align-items: center;
   justify-content: center;
   transition: transform 0.2s;
+  touch-action: manipulation;
 }
 
 .capture-btn:active {
@@ -340,6 +343,7 @@ html, body {
   font-size: 11px;
   transition: color 0.2s;
   border-radius: var(--radius-sm);
+  touch-action: manipulation;
 }
 
 .nav-btn:hover {
@@ -520,6 +524,7 @@ html, body {
   font-size: 11px;
   color: var(--text-secondary);
   transition: all 0.2s;
+  touch-action: manipulation;
 }
 
 .filter-action-btn:hover {
@@ -545,6 +550,7 @@ html, body {
   cursor: pointer;
   transition: all 0.2s;
   text-align: left;
+  touch-action: manipulation;
 }
 
 .export-btn:hover {
@@ -677,6 +683,15 @@ html, body {
 .history-actions button i {
   width: 14px;
   height: 14px;
+}
+
+/* Accessibility */
+button:focus-visible,
+select:focus-visible,
+.toggle input:focus-visible + .toggle-slider {
+  outline: 2px solid var(--navy);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 @media (max-width: 768px) {
