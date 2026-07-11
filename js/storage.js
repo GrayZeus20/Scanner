@@ -30,51 +30,60 @@ const storage = {
   },
 
   async saveScan(canvas, name) {
+    if (!canvas) throw new Error('Canvas tidak ditemukan untuk disimpan.');
     await this.init();
-    const imgData = canvas.toDataURL('image/jpeg', 0.9);
+    
+    try {
+      const imgData = canvas.toDataURL('image/jpeg', 0.9);
+      if (!imgData || imgData === 'data:,') throw new Error('Data gambar kosong.');
 
-    return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(this.storeName, 'readwrite');
-      tx.onabort = () => reject(tx.error || new Error('Storage transaction aborted'));
-      tx.onerror = () => reject(tx.error || new Error('Storage transaction failed'));
+      return new Promise((resolve, reject) => {
+        const tx = this.db.transaction(this.storeName, 'readwrite');
+        tx.onabort = () => reject(new Error('Storage transaction aborted'));
+        tx.onerror = () => reject(tx.error || new Error('Storage transaction failed'));
 
-      const store = tx.objectStore(this.storeName);
-      const scan = {
-        name: name || 'Scan_' + Date.now(),
-        image: imgData,
-        timestamp: Date.now()
-      };
+        const store = tx.objectStore(this.storeName);
+        const scan = {
+          name: name || 'Scan_' + Date.now(),
+          image: imgData,
+          timestamp: Date.now()
+        };
 
-      const request = store.add(scan);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+        const request = store.add(scan);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    } catch (err) {
+      console.error('Save scan error:', err);
+      throw err;
+    }
   },
 
   async getHistory() {
     await this.init();
 
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction(this.storeName, 'readonly');
-      tx.onabort = () => reject(tx.error || new Error('Storage transaction aborted'));
-      tx.onerror = () => reject(tx.error || new Error('Storage transaction failed'));
+      try {
+        const tx = this.db.transaction(this.storeName, 'readonly');
+        const store = tx.objectStore(this.storeName);
+        const index = store.index('timestamp');
+        const request = index.openCursor(null, 'prev');
+        const scans = [];
 
-      const store = tx.objectStore(this.storeName);
-      const index = store.index('timestamp');
-      const request = index.openCursor(null, 'prev');
-      const scans = [];
+        request.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) {
+            scans.push(cursor.value);
+            cursor.continue();
+          } else {
+            resolve(scans);
+          }
+        };
 
-      request.onsuccess = (e) => {
-        const cursor = e.target.result;
-        if (cursor) {
-          scans.push(cursor.value);
-          cursor.continue();
-        } else {
-          resolve(scans);
-        }
-      };
-
-      request.onerror = () => reject(request.error);
+        request.onerror = () => reject(request.error);
+      } catch (err) {
+        reject(err);
+      }
     });
   },
 

@@ -1,5 +1,9 @@
 const pdfExport = {
   async exportToPdf(canvases) {
+    if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+      throw new Error('jsPDF library tidak tersedia. Coba perbarui halaman.');
+    }
+
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -7,8 +11,15 @@ const pdfExport = {
 
     const canvasList = Array.isArray(canvases) ? canvases : [canvases];
 
+    if (canvasList.length === 0) {
+      throw new Error('Tidak ada halaman untuk diekspor.');
+    }
+
     for (let i = 0; i < canvasList.length; i++) {
       const canvas = canvasList[i];
+      if (!canvas || canvas.width === 0 || canvas.height === 0) {
+        throw new Error('Salah satu halaman tidak valid.');
+      }
       const imgData = canvas.toDataURL('image/jpeg', 0.95);
       
       const canvasRatio = canvas.width / canvas.height;
@@ -30,17 +41,25 @@ const pdfExport = {
       pdf.addImage(imgData, 'JPEG', x, y, imgW, imgH);
     }
 
-    return pdf.save('scan_' + Date.now() + '.pdf');
+    pdf.save('scan_' + Date.now() + '.pdf');
+    return true;
   },
 
   exportToImage(canvas, format) {
     const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
     const quality = format === 'png' ? 1 : 0.92;
+
+    if (!canvas || canvas.width === 0 || canvas.height === 0) {
+      throw new Error('Canvas tidak valid untuk ekspor.');
+    }
+
     const dataURL = canvas.toDataURL(mimeType, quality);
 
     const link = document.createElement('a');
     link.download = 'scan_' + Date.now() + '.' + format;
     link.href = dataURL;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
   }
 };

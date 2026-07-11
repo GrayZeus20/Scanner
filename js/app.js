@@ -620,7 +620,7 @@ const app = {
     setTimeout(() => toast.remove(), 2000);
   },
 
-  async   autoEnhance() {
+  async autoEnhance() {
     // Apply default sharpening for scanning clarity
     this.state.filters.sharpness = 30;
     this.state.filters.contrast = 20;
@@ -643,10 +643,12 @@ const app = {
   async runAiAnalysis() {
     const resultDiv = document.getElementById('aiResultArea');
     const btn = document.getElementById('aiAnalyzeBtn');
-    const text = document.getElementById('ocrResult').innerText;
+    const ocrResultDiv = document.getElementById('ocrResult');
+    const text = ocrResultDiv.innerText.trim();
 
-    if (!text || text === '(No text detected)') {
-      this.showToast('Tidak ada teks untuk dianalisis');
+    const processingText = t('processing');
+    if (!text || text === '(No text detected)' || text.includes(processingText)) {
+      this.showToast(t('noImage') + ' atau jalankan OCR terlebih dahulu');
       return;
     }
 

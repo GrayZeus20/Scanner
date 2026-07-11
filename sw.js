@@ -1,4 +1,4 @@
-const CACHE_NAME = 'webscanner-v2';
+const CACHE_NAME = 'webscanner-v3';
 const ASSETS = [
   '/',
   '/index.html',
@@ -10,6 +10,7 @@ const ASSETS = [
   '/js/pdf-export.js',
   '/js/storage.js',
   '/js/ocr.js',
+  '/js/ai.js',
   '/js/app.js',
   '/manifest.json',
   'https://unpkg.com/lucide@latest',
@@ -35,7 +36,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
       keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-    ))
+    )).then(() => self.clients.claim())
   );
 });
 
