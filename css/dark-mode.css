@@ -26,9 +26,6 @@
 .dark-mode .sheet-panel {
   background: var(--color-surface);
   border-color: var(--color-border);
-}
-
-.dark-mode .sheet-panel {
   border-left-color: var(--color-border);
 }
 

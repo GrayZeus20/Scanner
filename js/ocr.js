@@ -39,11 +39,13 @@ const ocrEngine = {
           const checkInterval = setInterval(() => {
             if (this._abortFlag || (abortCheck && abortCheck())) {
               clearInterval(checkInterval);
+              this.terminate(); // Terminate and reset
               reject(new Error(t('ocrCancelled')));
             }
           }, 200);
           setTimeout(() => {
             clearInterval(checkInterval);
+            this.terminate(); // Terminate and reset
             reject(new Error(t('ocrTimedOut')));
           }, 60000);
         })

@@ -20,16 +20,10 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then(async (cache) => {
-      for (const asset of ASSETS) {
-        try {
-          const url = asset.startsWith('http') ? asset : new URL(asset, self.location.href).href;
-          await cache.add(url);
-        } catch (error) {
-          console.warn('Failed to cache asset', asset, error);
-        }
-      }
+      await cache.addAll(ASSETS);
     })
   );
 });

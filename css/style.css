@@ -1324,12 +1324,6 @@ button:active, .nav-btn:active {
   }
 }
 
-@media (min-width: 769px) {
-  .filter-row {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
 /* ─── Desktop Enhancement ─────────────────────────────────────── */
 @media (min-width: 1024px) {
   #app {
@@ -1341,12 +1335,6 @@ button:active, .nav-btn:active {
 
   body {
     background: var(--color-muted);
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    /* (This would ideally import dark-mode.css vars or be defined here) */
   }
 }
 

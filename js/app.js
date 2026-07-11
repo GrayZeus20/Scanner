@@ -16,7 +16,6 @@ const app = {
       bw: false,
       threshold: 128
     },
-    rotation: 0,
     ocrAborted: false,
     zoom: 1,
     panX: 0,
@@ -73,7 +72,7 @@ const app = {
       this.state.darkMode = true;
     }
 
-    this.state.lang = detectLanguage();
+    this.state.lang = localStorage.getItem('scanner.lang') || detectLanguage();
     setLanguage(this.state.lang);
     document.getElementById('langSwitcher').value = this.state.lang;
     this.initEventListeners();
@@ -83,13 +82,30 @@ const app = {
     storage.init().catch(console.warn);
 
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(console.warn);
+      navigator.serviceWorker.register('sw.js').then(reg => {
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              this.showToast('New version available. Reload to update.');
+            }
+          });
+        });
+      }).catch(console.warn);
+
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
     }
   },
 
   initEventListeners() {
     document.getElementById('langSwitcher').addEventListener('change', (e) => {
       this.state.lang = e.target.value;
+      localStorage.setItem('scanner.lang', this.state.lang);
       setLanguage(e.target.value);
     });
 
@@ -200,6 +216,7 @@ const app = {
     // Mouse wheel zoom
     wrapper.addEventListener('wheel', (e) => {
       if (isInteractive(e)) return;
+      if (this.state.isCropping) return;
       e.preventDefault();
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
       this.setZoom(this.state.zoom + delta, e.clientX, e.clientY);
@@ -221,6 +238,7 @@ const app = {
 
     wrapper.addEventListener('touchmove', (e) => {
       if (e.touches.length === 2) {
+        if (this.state.isCropping) return;
         e.preventDefault();
         const dist = this.getTouchDistance(e.touches);
         const mid = this.getTouchMidpoint(e.touches);
@@ -437,6 +455,7 @@ const app = {
     if (!page) return;
     this.renderImage(page.originalImage);
     this.state.currentPageIndex = index;
+    this.resetZoom();
   },
 
   updatePagesTray() {
@@ -723,20 +742,25 @@ const app = {
     }
     this.showToast(t('processing'));
     setTimeout(() => {
-      const success = edgeDetection.detectAndCrop(this.canvas, this.ctx);
-      if (success) {
-        const croppedImage = new Image();
-        croppedImage.onload = () => {
-          this.setCurrentPageImage(croppedImage);
-          this.state.canvasWidth = this.canvas.width;
-          this.state.canvasHeight = this.canvas.height;
-          this.state.currentImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-          this.state.imageLoaded = true;
-          this.showToast(t('cropSuccess'));
-          this.applyFilters();
-        };
-        croppedImage.src = this.canvas.toDataURL();
-      } else {
+      try {
+        const success = edgeDetection.detectAndCrop(this.canvas, this.ctx);
+        if (success) {
+          const croppedImage = new Image();
+          croppedImage.onload = () => {
+            this.setCurrentPageImage(croppedImage);
+            this.state.canvasWidth = this.canvas.width;
+            this.state.canvasHeight = this.canvas.height;
+            this.state.currentImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+            this.state.imageLoaded = true;
+            this.showToast(t('cropSuccess'));
+            this.applyFilters();
+          };
+          croppedImage.src = this.canvas.toDataURL();
+        } else {
+          this.showToast(t('error'));
+        }
+      } catch (err) {
+        console.error('Auto crop failed:', err);
         this.showToast(t('error'));
       }
     }, 100);
@@ -751,11 +775,20 @@ const app = {
     const img = page ? page.originalImage : null;
     if (!img) return;
 
+    let srcW = img.width;
+    let srcH = img.height;
+    const MAX_SIZE = 2000;
+    if (srcW > MAX_SIZE || srcH > MAX_SIZE) {
+      const ratio = Math.min(MAX_SIZE / srcW, MAX_SIZE / srcH);
+      srcW = Math.floor(srcW * ratio);
+      srcH = Math.floor(srcH * ratio);
+    }
+
     const radians = (deg * Math.PI) / 180;
     const cos = Math.abs(Math.cos(radians));
     const sin = Math.abs(Math.sin(radians));
-    const newW = Math.ceil(img.width * cos + img.height * sin);
-    const newH = Math.ceil(img.width * sin + img.height * cos);
+    const newW = Math.ceil(srcW * cos + srcH * sin);
+    const newH = Math.ceil(srcW * sin + srcH * cos);
 
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = newW;
@@ -763,18 +796,27 @@ const app = {
     const tempCtx = tempCanvas.getContext('2d');
     tempCtx.translate(newW / 2, newH / 2);
     tempCtx.rotate(radians);
-    tempCtx.drawImage(img, -img.width / 2, -img.height / 2);
+    tempCtx.drawImage(img, 0, 0, srcW, srcH, -srcW / 2, -srcH / 2, srcW, srcH);
 
-    canvas.width = newW;
-    canvas.height = newH;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = newW * dpr;
+    canvas.height = newH * dpr;
+    this.state.canvasWidth = newW;
+    this.state.canvasHeight = newH;
+    this.state.logicalWidth = newW;
+    this.state.logicalHeight = newH;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.drawImage(tempCanvas, 0, 0);
+    canvas.style.width = '';
+    canvas.style.height = '';
+    this.state.baseDisplayW = newW;
+    this.state.baseDisplayH = newH;
+
     const transformedImage = new Image();
     transformedImage.onload = () => {
       this.setCurrentPageImage(transformedImage);
-      this.state.canvasWidth = canvas.width;
-      this.state.canvasHeight = canvas.height;
-      this.state.rotation = 0;
       this.state.imageLoaded = true;
+      this.resetZoom();
       this.applyFilters();
     };
     transformedImage.src = tempCanvas.toDataURL();
@@ -788,25 +830,48 @@ const app = {
     const img = page ? page.originalImage : null;
     if (!img) return;
 
+    const MAX_SIZE = 2000;
+    let w = img.width;
+    let h = img.height;
+    if (w > MAX_SIZE || h > MAX_SIZE) {
+      const ratio = Math.min(MAX_SIZE / w, MAX_SIZE / h);
+      w = Math.floor(w * ratio);
+      h = Math.floor(h * ratio);
+    }
+
+    const dpr = window.devicePixelRatio || 1;
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = canvas.width;
-    tempCanvas.height = canvas.height;
+    tempCanvas.width = w;
+    tempCanvas.height = h;
     const tempCtx = tempCanvas.getContext('2d');
 
     if (direction === 'horizontal') {
-      tempCtx.translate(canvas.width, 0);
+      tempCtx.translate(w, 0);
       tempCtx.scale(-1, 1);
     } else {
-      tempCtx.translate(0, canvas.height);
+      tempCtx.translate(0, h);
       tempCtx.scale(1, -1);
     }
-    tempCtx.drawImage(img, 0, 0);
+    tempCtx.drawImage(img, 0, 0, w, h);
 
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    this.state.canvasWidth = w;
+    this.state.canvasHeight = h;
+    this.state.logicalWidth = w;
+    this.state.logicalHeight = h;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.drawImage(tempCanvas, 0, 0);
+    canvas.style.width = '';
+    canvas.style.height = '';
+    this.state.baseDisplayW = w;
+    this.state.baseDisplayH = h;
+
     const transformedImage = new Image();
     transformedImage.onload = () => {
       this.setCurrentPageImage(transformedImage);
       this.state.imageLoaded = true;
+      this.resetZoom();
       this.applyFilters();
     };
     transformedImage.src = tempCanvas.toDataURL();
@@ -927,8 +992,8 @@ const app = {
       const localResult = await aiEngine.analyzeLocal(text);
       
       let html = '';
-      if (aiEngine.getApiKey()) {
-        html += `<span class="ai-tag">Cloud AI (GPT-4o-mini)</span>`;
+      if (aiEngine.isCloudAvailable()) {
+        html += `<span class="ai-tag">Cloud AI (Groq Llama 3.3 70B)</span>`;
         const cloudResult = await aiEngine.analyzeCloud(text);
         if (cloudResult.fullAnalysis) {
           html += `<div style="margin-top: 8px; white-space: pre-wrap; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 12px;">${this.escapeHtml(cloudResult.fullAnalysis)}</div>`;

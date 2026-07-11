@@ -88,6 +88,28 @@ const manualCrop = {
     this.hideMagnifier();
   },
 
+  showMagnifier() {
+    if (!this.magnifier) return;
+    this.magnifier.style.display = 'block';
+  },
+
+  hideMagnifier() {
+    if (!this.magnifier) return;
+    this.magnifier.style.display = 'none';
+  },
+
+  updateMagnifier(x, y) {
+    if (!this.magnifier) return;
+    this.magnifier.style.left = (x + 16) + 'px';
+    this.magnifier.style.top = (y + 16) + 'px';
+    const src = this.canvas.toDataURL();
+    if (src) {
+      this.magnifier.style.backgroundImage = `url(${src})`;
+      this.magnifier.style.backgroundSize = `${this.canvas.width * 2}px ${this.canvas.height * 2}px`;
+      this.magnifier.style.backgroundPosition = `-${x * 2}px -${y * 2}px`;
+    }
+  },
+
   getPos(e) {
     if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
     return { x: e.clientX, y: e.clientY };
@@ -163,16 +185,17 @@ const manualCrop = {
   getCropRect() {
     const c = this.state.corners;
     const canvasRect = this.canvas.getBoundingClientRect();
+    const wrapperRect = this.wrapper.getBoundingClientRect();
     const scaleX = this.canvas.width / canvasRect.width;
     const scaleY = this.canvas.height / canvasRect.height;
-    const canvasLeft = canvasRect.left;
-    const canvasTop = canvasRect.top;
+    const canvasLeft = canvasRect.left - wrapperRect.left;
+    const canvasTop = canvasRect.top - wrapperRect.top;
 
     return {
-      tl: { x: (c.tl.x * scaleX), y: (c.tl.y * scaleY) },
-      tr: { x: (c.tr.x * scaleX), y: (c.tr.y * scaleY) },
-      bl: { x: (c.bl.x * scaleX), y: (c.bl.y * scaleY) },
-      br: { x: (c.br.x * scaleX), y: (c.br.y * scaleY) }
+      tl: { x: (c.tl.x - canvasLeft) * scaleX, y: (c.tl.y - canvasTop) * scaleY },
+      tr: { x: (c.tr.x - canvasLeft) * scaleX, y: (c.tr.y - canvasTop) * scaleY },
+      bl: { x: (c.bl.x - canvasLeft) * scaleX, y: (c.bl.y - canvasTop) * scaleY },
+      br: { x: (c.br.x - canvasLeft) * scaleX, y: (c.br.y - canvasTop) * scaleY }
     };
   },
 
@@ -182,15 +205,18 @@ const manualCrop = {
     const srcCtx = srcCanvas.getContext('2d');
     const c = this.state.corners;
     const canvasRect = srcCanvas.getBoundingClientRect();
+    const wrapperRect = this.wrapper.getBoundingClientRect();
     const scaleX = srcCanvas.width / canvasRect.width;
     const scaleY = srcCanvas.height / canvasRect.height;
+    const canvasLeft = canvasRect.left - wrapperRect.left;
+    const canvasTop = canvasRect.top - wrapperRect.top;
 
     // Convert corners to canvas pixel coordinates
     const pts = [
-      { x: c.tl.x * scaleX, y: c.tl.y * scaleY },
-      { x: c.tr.x * scaleX, y: c.tr.y * scaleY },
-      { x: c.br.x * scaleX, y: c.br.y * scaleY },
-      { x: c.bl.x * scaleX, y: c.bl.y * scaleY }
+      { x: (c.tl.x - canvasLeft) * scaleX, y: (c.tl.y - canvasTop) * scaleY },
+      { x: (c.tr.x - canvasLeft) * scaleX, y: (c.tr.y - canvasTop) * scaleY },
+      { x: (c.br.x - canvasLeft) * scaleX, y: (c.br.y - canvasTop) * scaleY },
+      { x: (c.bl.x - canvasLeft) * scaleX, y: (c.bl.y - canvasTop) * scaleY }
     ];
 
     // Bounding box

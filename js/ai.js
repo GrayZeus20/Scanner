@@ -2,6 +2,10 @@ const aiEngine = {
   // Ganti URL ini dengan URL Cloudflare Worker Anda setelah deploy
   _workerUrl: 'https://scanner-ai-proxy.ace-suka-main-game.workers.dev',
   _useCloudProxy: true, // Set false jika ingin langsung ke Gemini (tidak disarankan)
+  
+  isCloudAvailable() {
+    return this._useCloudProxy && navigator.onLine;
+  },
 
   async analyzeLocal(text) {
     return new Promise(resolve => {

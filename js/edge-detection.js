@@ -11,35 +11,40 @@ const edgeDetection = {
     const workCtx = workCanvas.getContext('2d');
     workCtx.drawImage(canvas, 0, 0, workCanvas.width, workCanvas.height);
 
-    const imageData = workCtx.getImageData(0, 0, workCanvas.width, workCanvas.height);
-    const data = imageData.data;
-    const w = workCanvas.width;
-    const h = workCanvas.height;
+    try {
+      const imageData = workCtx.getImageData(0, 0, workCanvas.width, workCanvas.height);
+      const data = imageData.data;
+      const w = workCanvas.width;
+      const h = workCanvas.height;
 
-    const gray = this.toGrayscale(data);
-    const blurred = this.gaussianBlur(gray, w, h);
-    const edges = this.sobel(blurred, w, h);
-    const threshold = this.adaptiveThreshold(edges, w, h);
+      const gray = this.toGrayscale(data);
+      const blurred = this.gaussianBlur(gray, w, h);
+      const edges = this.sobel(blurred, w, h);
+      const threshold = this.adaptiveThreshold(edges, w, h);
 
-    let cropRect = this.findLargestRect(edges, w, h, threshold);
+      let cropRect = this.findLargestRect(edges, w, h, threshold);
 
-    if (!cropRect && threshold > 15) {
-      cropRect = this.findLargestRect(edges, w, h, Math.max(10, threshold * 0.5));
-    }
+      if (!cropRect && threshold > 15) {
+        cropRect = this.findLargestRect(edges, w, h, Math.max(10, threshold * 0.5));
+      }
 
-    if (!cropRect) {
+      if (!cropRect || cropRect.w < 20 || cropRect.h < 20) {
+        return false;
+      }
+
+      const invScale = 1 / scale;
+      const padding = 10;
+      const cropX = Math.max(0, Math.round(cropRect.x * invScale) - padding);
+      const cropY = Math.max(0, Math.round(cropRect.y * invScale) - padding);
+      const cropW = Math.min(origW - cropX, Math.round(cropRect.w * invScale) + padding * 2);
+      const cropH = Math.min(origH - cropY, Math.round(cropRect.h * invScale) + padding * 2);
+
+      this.cropCanvas(canvas, ctx, { x: cropX, y: cropY, w: cropW, h: cropH });
+      return true;
+    } catch (err) {
+      console.error('Edge detection failed:', err);
       return false;
     }
-
-    const invScale = 1 / scale;
-    const padding = 10;
-    const cropX = Math.max(0, Math.round(cropRect.x * invScale) - padding);
-    const cropY = Math.max(0, Math.round(cropRect.y * invScale) - padding);
-    const cropW = Math.min(origW - cropX, Math.round(cropRect.w * invScale) + padding * 2);
-    const cropH = Math.min(origH - cropY, Math.round(cropRect.h * invScale) + padding * 2);
-
-    this.cropCanvas(canvas, ctx, { x: cropX, y: cropY, w: cropW, h: cropH });
-    return true;
   },
 
   toGrayscale(data) {
