@@ -186,8 +186,20 @@ const app = {
     const canvas = document.getElementById('mainCanvas');
     const wrapper = document.getElementById('canvasWrapper');
 
+    // Check if target is interactive
+    const isInteractive = (e) => {
+      const t = e.target;
+      return t.closest('button') || t.closest('.nav-btn') || t.closest('.zoom-btn') || 
+             t.closest('.camera-action-btn') || t.closest('.filter-action-btn') || 
+             t.closest('.export-btn') || t.closest('.tool-action-btn') || 
+             t.closest('.crop-action-btn') || t.closest('.crop-handle') || 
+             t.closest('.toggle') || t.closest('select') || t.closest('input') ||
+             t.closest('.flash-btn');
+    };
+
     // Mouse wheel zoom
     wrapper.addEventListener('wheel', (e) => {
+      if (isInteractive(e)) return;
       e.preventDefault();
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
       this.setZoom(this.state.zoom + delta, e.clientX, e.clientY);
@@ -195,12 +207,11 @@ const app = {
 
     // Pinch zoom (touch)
     let lastDist = 0;
-    let lastMid = { x: 0, y: 0 };
 
     wrapper.addEventListener('touchstart', (e) => {
+      if (isInteractive(e)) return;
       if (e.touches.length === 2) {
         lastDist = this.getTouchDistance(e.touches);
-        lastMid = this.getTouchMidpoint(e.touches);
       } else if (e.touches.length === 1 && this.state.zoom > 1) {
         this.state.isPanning = true;
         this.state.panStartX = e.touches[0].clientX - this.state.panX;
@@ -230,6 +241,7 @@ const app = {
 
     // Mouse drag pan
     wrapper.addEventListener('mousedown', (e) => {
+      if (isInteractive(e)) return;
       if (this.state.zoom > 1 && !this.state.isCropping) {
         this.state.isPanning = true;
         this.state.panStartX = e.clientX - this.state.panX;
@@ -257,15 +269,18 @@ const app = {
     });
 
     // Zoom buttons
-    document.getElementById('zoomInBtn').addEventListener('click', () => {
+    document.getElementById('zoomInBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
       this.setZoom(this.state.zoom + 0.2);
     });
 
-    document.getElementById('zoomOutBtn').addEventListener('click', () => {
+    document.getElementById('zoomOutBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
       this.setZoom(this.state.zoom - 0.2);
     });
 
-    document.getElementById('zoomResetBtn').addEventListener('click', () => {
+    document.getElementById('zoomResetBtn').addEventListener('click', (e) => {
+      e.stopPropagation();
       this.resetZoom();
     });
   },
@@ -395,18 +410,24 @@ const app = {
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     
-    // Let CSS handle display sizing via max-width/max-height; avoid stretching
-    canvas.style.width = '';
-    canvas.style.height = '';
-    canvas.style.aspectRatio = `${w} / ${h}`;
-    
+    // Store logical size for calculations
     this.state.canvasWidth = w;
     this.state.canvasHeight = h;
+    this.state.logicalWidth = w;
+    this.state.logicalHeight = h;
     
-    ctx.scale(dpr, dpr);
+    // Reset transform and set context scale
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     
+    // Draw image at logical size (fills buffer proportionally)
     ctx.drawImage(img, 0, 0, w, h);
-    this.state.currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    
+    // Let CSS handle display sizing - no explicit style width/height
+    canvas.style.width = '';
+    canvas.style.height = '';
+    
+    this.state.baseDisplayW = w;
+    this.state.baseDisplayH = h;
     this.state.imageLoaded = true;
     this.applyFilters();
   },
