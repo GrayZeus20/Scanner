@@ -7,7 +7,6 @@ const aiEngine = {
     localStorage.setItem('scanner.openai_key', key);
   },
 
-  // --- UPGRADED LOCAL AI: Smart Pattern-Based Analysis ---
   async analyzeLocal(text) {
     return new Promise(resolve => {
       setTimeout(() => {
@@ -17,7 +16,6 @@ const aiEngine = {
         
         const lowerText = text.toLowerCase();
         
-        // 1. Smart Document Classification
         if (lowerText.match(/faktur|invoice|total|bayar|beli|harga|struk|nota/)) {
           type = 'Dokumen Keuangan';
           structuredData = this.extractFinancialData(text);
@@ -41,7 +39,6 @@ const aiEngine = {
           summary = 'Teks ditemukan namun tidak teridentifikasi sebagai format dokumen spesifik.';
         }
 
-        // 2. Extract Key Information (Universal)
         structuredData.dates = this.extractDates(text);
         structuredData.phones = this.extractPhones(text);
         structuredData.emails = this.extractEmails(text);
@@ -111,7 +108,7 @@ const aiEngine = {
       output += '\n--- Data Terstruktur ---\n';
       keys.forEach(key => {
         if (key === 'items' && Array.isArray(data[key]) && data[key].length > 0) {
-          output += `- ITEMS:\n${data[key].map(item => `  • ${item}`).join('\n')}\n`;
+          output += `- ITEMS:\n${data[key].map(item => `  \u2022 ${item}`).join('\n')}\n`;
           return;
         }
         const val = Array.isArray(data[key]) ? data[key].join(', ') : data[key];
@@ -119,15 +116,17 @@ const aiEngine = {
       });
     }
     
-    output += '\nℹ Gunakan API Key OpenAI di Pengaturan untuk analisis konteks dan ringkasan mendalam.';
     return output;
   },
 
-  // --- CLOUD AI: Smart Analysis (Requires API Key) ---
   async analyzeCloud(text) {
     const apiKey = this.getApiKey();
     if (!apiKey) {
       throw new Error('API Key belum diatur. Silakan masukkan kunci di Pengaturan.');
+    }
+
+    if (!navigator.onLine) {
+      throw new Error('Tidak ada koneksi internet. Gunakan analisis lokal yang tersedia tanpa perlu koneksi.');
     }
 
     const prompt = `Analisis dokumen berikut secara mendalam. Berikan:
@@ -138,6 +137,9 @@ const aiEngine = {
 Teks: ${text}`;
 
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -145,14 +147,25 @@ Teks: ${text}`;
           'Authorization': `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini", // Efficient and cheap model for scanner tasks
+          model: "gpt-4o-mini",
           messages: [{ role: "user", content: prompt }]
-        })
+        }),
+        signal: controller.signal
       });
 
+      clearTimeout(timeout);
+
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error.message || 'Gagal menghubungi OpenAI.');
+        let errorMsg = 'Gagal menghubungi OpenAI.';
+        try {
+          const err = await response.json();
+          errorMsg = err.error?.message || errorMsg;
+        } catch (_) {}
+        // If it's an auth error, provide guidance
+        if (response.status === 401) {
+          errorMsg += ' Periksa API Key Anda di Pengaturan. Kunci disimpan di browser Anda secara lokal.';
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();
@@ -165,6 +178,12 @@ Teks: ${text}`;
         fullAnalysis: resultText
       };
     } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Permintaan ke OpenAI kehabisan waktu. Coba gunakan analisis lokal yang lebih cepat.');
+      }
+      if (error.message === 'Failed to fetch' || error.message.includes('NetworkError')) {
+        throw new Error('Gagal terhubung ke OpenAI. Periksa koneksi internet Anda atau gunakan analisis lokal.');
+      }
       throw error;
     }
   }

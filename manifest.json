@@ -2,7 +2,7 @@
   "name": "WebScanner",
   "short_name": "WebScanner",
   "description": "Web-based document scanner with camera capture, image editing, and PDF export",
-  "start_url": "/",
+  "start_url": ".",
   "display": "standalone",
   "background_color": "#f5f5f5",
   "theme_color": "#1a237e",
