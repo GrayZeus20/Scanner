@@ -77,7 +77,12 @@ const app = {
 
     document.getElementById('fileInput').addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
-        this.loadFile(e.target.files[0]);
+        // Handle multiple files
+        Array.from(e.target.files).forEach(file => {
+          if (file.type.startsWith('image/')) {
+            this.loadFile(file);
+          }
+        });
         e.target.value = '';
       }
     });
@@ -180,12 +185,12 @@ const app = {
   },
 
   loadFile(file) {
-    if (!file.type.startsWith('image/')) {
-      this.showToast(t('error'));
-      return;
-    }
+    if (!file.type.startsWith('image/')) return;
+    
     const reader = new FileReader();
-    reader.onload = (e) => this.loadImageFromSrc(e.target.result);
+    reader.onload = (e) => {
+      this.loadImageFromSrc(e.target.result);
+    };
     reader.readAsDataURL(file);
   },
 
@@ -261,7 +266,16 @@ const app = {
     this.state.pages.forEach((page, idx) => {
       const thumb = document.createElement('div');
       thumb.className = `page-thumb ${idx === this.state.currentPageIndex ? 'active' : ''}`;
-      thumb.innerHTML = `<span>${idx + 1}</span>`;
+      
+      // Thumbnail image if available
+      if (page.originalImage) {
+        const img = document.createElement('img');
+        img.src = page.originalImage.src;
+        thumb.appendChild(img);
+      } else {
+        thumb.innerHTML = `<span>${idx + 1}</span>`;
+      }
+
       thumb.onclick = () => {
         this.renderPage(idx);
         this.updatePagesTray();

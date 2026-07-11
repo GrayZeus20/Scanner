@@ -20,7 +20,17 @@ const pdfExport = {
       if (!canvas || canvas.width === 0 || canvas.height === 0) {
         throw new Error('Salah satu halaman tidak valid.');
       }
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+
+      // --- FIX: Ensure white background to prevent PDF color shifts ---
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = canvas.width;
+      tempCanvas.height = canvas.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.fillStyle = '#FFFFFF';
+      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+      tempCtx.drawImage(canvas, 0, 0);
+      
+      const imgData = tempCanvas.toDataURL('image/jpeg', 0.95);
       
       const canvasRatio = canvas.width / canvas.height;
       const pdfRatio = pdfWidth / pdfHeight;
@@ -53,7 +63,16 @@ const pdfExport = {
       throw new Error('Canvas tidak valid untuk ekspor.');
     }
 
-    const dataURL = canvas.toDataURL(mimeType, quality);
+    // --- FIX: Ensure white background for image export ---
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.fillStyle = '#FFFFFF';
+    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    tempCtx.drawImage(canvas, 0, 0);
+
+    const dataURL = tempCanvas.toDataURL(mimeType, quality);
 
     const link = document.createElement('a');
     link.download = 'scan_' + Date.now() + '.' + format;
