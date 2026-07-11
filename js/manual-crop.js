@@ -4,10 +4,7 @@ const manualCrop = {
   magnifier: null,
   wrapper: null,
   canvas: null,
-  _listenersBound: false,
-  _magnifierCache: null,
-  _magnifierCacheSize: 0,
-
+  
   state: {
     dragging: false,
     resizing: false,
@@ -18,8 +15,7 @@ const manualCrop = {
     startTop: 0,
     startWidth: 0,
     startHeight: 0,
-    minSize: 40,
-    mode: 'rect'
+    minSize: 40
   },
 
   init() {
@@ -29,7 +25,8 @@ const manualCrop = {
     this.wrapper = document.getElementById('canvasWrapper');
     this.canvas = document.getElementById('mainCanvas');
 
-    if (!this.area) return;
+    if (!this.area || this.initialized) return;
+    this.initialized = true;
 
     this.area.addEventListener('mousedown', (e) => this.onAreaStart(e));
     this.area.addEventListener('touchstart', (e) => this.onAreaStart(e), { passive: false });
@@ -39,13 +36,10 @@ const manualCrop = {
       handle.addEventListener('touchstart', (e) => this.onHandleStart(e), { passive: false });
     });
 
-    if (!this._listenersBound) {
-      document.addEventListener('mousemove', (e) => this.onMove(e));
-      document.addEventListener('touchmove', (e) => this.onMove(e), { passive: false });
-      document.addEventListener('mouseup', () => this.onEnd());
-      document.addEventListener('touchend', () => this.onEnd());
-      this._listenersBound = true;
-    }
+    document.addEventListener('mousemove', (e) => this.onMove(e));
+    document.addEventListener('touchmove', (e) => this.onMove(e), { passive: false });
+    document.addEventListener('mouseup', () => this.onEnd());
+    document.addEventListener('touchend', () => this.onEnd());
   },
 
   onAreaStart(e) {
@@ -116,27 +110,19 @@ const manualCrop = {
       let newWidth = this.state.startWidth;
       let newHeight = this.state.startHeight;
 
-      if (handle.includes('r')) {
-        newWidth = Math.max(this.state.minSize, Math.min(this.state.startWidth + dx, maxX - newLeft));
-      }
+      if (handle.includes('r')) newWidth = Math.max(this.state.minSize, Math.min(this.state.startWidth + dx, maxX - newLeft));
       if (handle.includes('l')) {
-        const delta = dx;
-        newWidth = Math.max(this.state.minSize, this.state.startWidth - delta);
+        newWidth = Math.max(this.state.minSize, this.state.startWidth - dx);
         newLeft = this.state.startLeft + (this.state.startWidth - newWidth);
       }
-      if (handle.includes('b')) {
-        newHeight = Math.max(this.state.minSize, Math.min(this.state.startHeight + dy, maxY - newTop));
-      }
+      if (handle.includes('b')) newHeight = Math.max(this.state.minSize, Math.min(this.state.startHeight + dy, maxY - newTop));
       if (handle.includes('t')) {
-        const delta = dy;
-        newHeight = Math.max(this.state.minSize, this.state.startHeight - delta);
+        newHeight = Math.max(this.state.minSize, this.state.startHeight - dy);
         newTop = this.state.startTop + (this.state.startHeight - newHeight);
       }
 
-      if (newLeft < 0) { newLeft = 0; }
-      if (newTop < 0) { newTop = 0; }
-      if (newWidth < this.state.minSize) newWidth = this.state.minSize;
-      if (newHeight < this.state.minSize) newHeight = this.state.minSize;
+      if (newLeft < 0) newLeft = 0;
+      if (newTop < 0) newTop = 0;
 
       this.area.style.left = newLeft + 'px';
       this.area.style.top = newTop + 'px';
@@ -155,22 +141,8 @@ const manualCrop = {
   },
 
   getPos(e) {
-    if (e.touches && e.touches.length > 0) {
-      return { x: e.touches[0].clientX, y: e.touches[0].clientY };
-    }
+    if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
     return { x: e.clientX, y: e.clientY };
-  },
-
-  getCachedMagnifierImage() {
-    const now = Date.now();
-    const cw = this.canvas.width;
-    const ch = this.canvas.height;
-    if (!this._magnifierCache || this._magnifierCacheSize !== cw * ch || now - this._magnifierCacheTime > 500) {
-      this._magnifierCache = this.canvas.toDataURL();
-      this._magnifierCacheSize = cw * ch;
-      this._magnifierCacheTime = now;
-    }
-    return this._magnifierCache;
   },
 
   showMagnifier(x, y) {
@@ -182,15 +154,16 @@ const manualCrop = {
     const canvasRect = this.canvas.getBoundingClientRect();
     const scaleX = this.canvas.width / canvasRect.width;
     const scaleY = this.canvas.height / canvasRect.height;
+    const cx = (x - canvasRect.left) * scaleX;
+    const cy = (y - canvasRect.top) * scaleY;
 
-    this.magnifier.style.backgroundImage = `url(${this.getCachedMagnifierImage()})`;
+    this.magnifier.style.backgroundImage = `url(${this.canvas.toDataURL()})`;
     this.magnifier.style.backgroundSize = `${canvasRect.width * scaleX}px ${canvasRect.height * scaleY}px`;
     this.magnifier.style.backgroundPosition = `-${x - 60}px -${y - 140}px`;
   },
 
   updateMagnifier(left, top, width, height, handle) {
     if (!this.magnifier) return;
-
     let x, y;
     if (handle === 'tl') { x = left; y = top; }
     else if (handle === 'tr') { x = left + width; y = top; }
@@ -205,7 +178,6 @@ const manualCrop = {
     const scaleY = this.canvas.height / canvasRect.height;
     const cx = (x - canvasRect.left) * scaleX;
     const cy = (y - canvasRect.top) * scaleY;
-
     this.magnifier.style.backgroundPosition = `-${cx * (120 / 30)}px -${cy * (120 / 30)}px`;
   },
 
@@ -228,28 +200,9 @@ const manualCrop = {
     };
   },
 
-  getCropResult() {
-    if (this.state.mode === 'quad') {
-      return { quad: this.getQuadPoints() };
-    }
-    return { rect: this.getCropRect() };
-  },
-
-  getQuadPoints() {
-    const rect = this.getCropRect();
-    return {
-      tl: { x: rect.x, y: rect.y },
-      tr: { x: rect.x + rect.width, y: rect.y },
-      bl: { x: rect.x, y: rect.y + rect.height },
-      br: { x: rect.x + rect.width, y: rect.y + rect.height }
-    };
-  },
-
   resetCropArea() {
     if (!this.area || !this.canvas) return;
-
     const canvasRect = this.canvas.getBoundingClientRect();
-    
     const padding = Math.min(canvasRect.width, canvasRect.height) * 0.05;
     
     this.area.style.left = padding + 'px';

@@ -17,7 +17,13 @@ const app = {
       threshold: 128
     },
     rotation: 0,
-    ocrAborted: false
+    ocrAborted: false,
+    zoom: 1,
+    panX: 0,
+    panY: 0,
+    isPanning: false,
+    lastPinchDist: 0,
+    isCropping: false
   },
 
   canvas: document.getElementById('mainCanvas'),
@@ -192,6 +198,140 @@ const app = {
 
     this.initFilterControls();
     this.initExportButtons();
+    this.initZoomControls();
+  },
+
+  initZoomControls() {
+    const canvas = document.getElementById('mainCanvas');
+    const wrapper = document.getElementById('canvasWrapper');
+
+    // Mouse wheel zoom
+    wrapper.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      this.setZoom(this.state.zoom + delta, e.clientX, e.clientY);
+    }, { passive: false });
+
+    // Pinch zoom (touch)
+    let lastDist = 0;
+    let lastMid = { x: 0, y: 0 };
+
+    wrapper.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        lastDist = this.getTouchDistance(e.touches);
+        lastMid = this.getTouchMidpoint(e.touches);
+      } else if (e.touches.length === 1 && this.state.zoom > 1) {
+        this.state.isPanning = true;
+        this.state.panStartX = e.touches[0].clientX - this.state.panX;
+        this.state.panStartY = e.touches[0].clientY - this.state.panY;
+      }
+    }, { passive: true });
+
+    wrapper.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const dist = this.getTouchDistance(e.touches);
+        const mid = this.getTouchMidpoint(e.touches);
+        const scale = dist / lastDist;
+        this.setZoom(this.state.zoom * scale, mid.x, mid.y);
+        lastDist = dist;
+      } else if (e.touches.length === 1 && this.state.isPanning) {
+        e.preventDefault();
+        this.state.panX = e.touches[0].clientX - this.state.panStartX;
+        this.state.panY = e.touches[0].clientY - this.state.panStartY;
+        this.updatePan();
+      }
+    }, { passive: false });
+
+    wrapper.addEventListener('touchend', () => {
+      this.state.isPanning = false;
+    });
+
+    // Mouse drag pan
+    wrapper.addEventListener('mousedown', (e) => {
+      if (this.state.zoom > 1 && !this.state.isCropping) {
+        this.state.isPanning = true;
+        this.state.panStartX = e.clientX - this.state.panX;
+        this.state.panStartY = e.clientY - this.state.panY;
+        wrapper.style.cursor = 'grabbing';
+      }
+    });
+
+    wrapper.addEventListener('mousemove', (e) => {
+      if (this.state.isPanning) {
+        this.state.panX = e.clientX - this.state.panStartX;
+        this.state.panY = e.clientY - this.state.panStartY;
+        this.updatePan();
+      }
+    });
+
+    wrapper.addEventListener('mouseup', () => {
+      this.state.isPanning = false;
+      wrapper.style.cursor = 'grab';
+    });
+
+    wrapper.addEventListener('mouseleave', () => {
+      this.state.isPanning = false;
+      wrapper.style.cursor = 'grab';
+    });
+
+    // Zoom buttons
+    document.getElementById('zoomInBtn').addEventListener('click', () => {
+      this.setZoom(this.state.zoom + 0.2);
+    });
+
+    document.getElementById('zoomOutBtn').addEventListener('click', () => {
+      this.setZoom(this.state.zoom - 0.2);
+    });
+
+    document.getElementById('zoomResetBtn').addEventListener('click', () => {
+      this.resetZoom();
+    });
+  },
+
+  setZoom(newZoom, centerX, centerY) {
+    const canvas = document.getElementById('mainCanvas');
+    const wrapper = document.getElementById('canvasWrapper');
+    const oldZoom = this.state.zoom;
+    
+    this.state.zoom = Math.max(0.5, Math.min(newZoom, 5));
+    
+    // Adjust pan to zoom toward center
+    if (centerX !== undefined && centerY !== undefined) {
+      const rect = wrapper.getBoundingClientRect();
+      const x = centerX - rect.left - rect.width / 2;
+      const y = centerY - rect.top - rect.height / 2;
+      this.state.panX = x - (x - this.state.panX) * (this.state.zoom / oldZoom);
+      this.state.panY = y - (y - this.state.panY) * (this.state.zoom / oldZoom);
+    }
+    
+    this.updatePan();
+    this.showToast(`Zoom: ${Math.round(this.state.zoom * 100)}%`);
+  },
+
+  resetZoom() {
+    this.state.zoom = 1;
+    this.state.panX = 0;
+    this.state.panY = 0;
+    this.updatePan();
+  },
+
+  updatePan() {
+    const canvas = document.getElementById('mainCanvas');
+    canvas.style.transform = `scale(${this.state.zoom}) translate(${this.state.panX / this.state.zoom}px, ${this.state.panY / this.state.zoom}px)`;
+  },
+
+  getTouchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  },
+
+  getTouchMidpoint(touches) {
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2
+    };
   },
 
   showEditor() {
