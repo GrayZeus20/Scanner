@@ -43,8 +43,8 @@ const camera = {
       const constraints = {
         video: { 
           facingMode: this.facingMode,
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          width: { ideal: 4096 },
+          height: { ideal: 2160 }
         } 
       };
 
@@ -70,6 +70,9 @@ const camera = {
 
       this.applyCameraEnhancements();
       document.getElementById('cameraView').classList.remove('hidden');
+      document.getElementById('editorArea')?.classList.add('hidden');
+      document.getElementById('bottomNav')?.classList.add('hidden');
+      document.getElementById('emptyState')?.classList.add('hidden');
       lucide.createIcons();
     } catch (err) {
       console.error(err);
@@ -96,6 +99,11 @@ const camera = {
       const flashBtn = document.getElementById('flashToggle');
       if (capabilities.torch) {
         flashBtn.classList.remove('hidden');
+      } else {
+        // Flash might be supported but not in capabilities
+        // Force showing it to let the user try, we handle error in toggleFlash
+        flashBtn.classList.remove('hidden');
+        flashBtn.style.opacity = '0.7';
       } else {
         flashBtn.classList.add('hidden');
       }
@@ -141,7 +149,7 @@ const camera = {
     canvas.height = this.video.videoHeight;
     canvas.getContext('2d').drawImage(this.video, 0, 0);
 
-    const dataUrl = canvas.toDataURL('image/jpeg');
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
     app.loadImageFromSrc(dataUrl);
     
     this.capturedCount++;
@@ -198,6 +206,12 @@ const camera = {
     }
     this.facingMode = 'environment';
     document.getElementById('cameraView')?.classList.add('hidden');
+    if (app.state.imageLoaded) {
+      document.getElementById('editorArea')?.classList.remove('hidden');
+      document.getElementById('bottomNav')?.classList.remove('hidden');
+    } else {
+      document.getElementById('emptyState')?.classList.remove('hidden');
+    }
   },
 
   tapToFocus(e) {
