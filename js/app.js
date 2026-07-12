@@ -209,7 +209,6 @@ const app = {
     const canvas = document.getElementById('mainCanvas');
     const wrapper = document.getElementById('canvasWrapper');
 
-    // Check if target is interactive
     const isInteractive = (e) => {
       const t = e.target;
       return t.closest('button') || t.closest('.nav-btn') || t.closest('.zoom-btn') || 
@@ -217,29 +216,57 @@ const app = {
              t.closest('.export-btn') || t.closest('.tool-action-btn') || 
              t.closest('.crop-action-btn') || t.closest('.crop-handle') || 
              t.closest('.toggle') || t.closest('select') || t.closest('input') ||
-             t.closest('.flash-btn');
+             t.closest('.flash-btn') || t.closest('.inpaint-toolbar') ||
+             t.closest('#maskCanvas');
     };
 
-    // Mouse wheel zoom
+    // --- Inertia state ---
+    let velX = 0, velY = 0, inertiaId = null;
+
+    const stopInertia = () => {
+      if (inertiaId) { cancelAnimationFrame(inertiaId); inertiaId = null; }
+    };
+
+    const startInertia = () => {
+      stopInertia();
+      const step = () => {
+        velX *= 0.92; velY *= 0.92;
+        if (Math.abs(velX) < 0.5 && Math.abs(velY) < 0.5) return;
+        this.state.panX += velX;
+        this.state.panY += velY;
+        this.updatePan();
+        inertiaId = requestAnimationFrame(step);
+      };
+      inertiaId = requestAnimationFrame(step);
+    };
+
+    // Track velocity for inertia
+    let lastMoveX = 0, lastMoveY = 0, lastMoveTime = 0;
+
+    // --- Mouse wheel zoom (pinch-friendly) ---
     wrapper.addEventListener('wheel', (e) => {
       if (isInteractive(e)) return;
       if (this.state.isCropping) return;
       e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      this.setZoom(this.state.zoom + delta, e.clientX, e.clientY);
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      this.setZoom(this.state.zoom * factor, e.clientX, e.clientY);
     }, { passive: false });
 
-    // Pinch zoom (touch)
+    // --- Touch events with inertia ---
     let lastDist = 0;
 
     wrapper.addEventListener('touchstart', (e) => {
       if (isInteractive(e)) return;
+      stopInertia();
       if (e.touches.length === 2) {
         lastDist = this.getTouchDistance(e.touches);
       } else if (e.touches.length === 1) {
         this.state.isPanning = true;
         this.state.panStartX = e.touches[0].clientX - this.state.panX;
         this.state.panStartY = e.touches[0].clientY - this.state.panY;
+        lastMoveX = e.touches[0].clientX;
+        lastMoveY = e.touches[0].clientY;
+        lastMoveTime = performance.now();
       }
     }, { passive: true });
 
@@ -249,60 +276,84 @@ const app = {
         e.preventDefault();
         const dist = this.getTouchDistance(e.touches);
         const mid = this.getTouchMidpoint(e.touches);
-        const scale = dist / lastDist;
-        this.setZoom(this.state.zoom * scale, mid.x, mid.y);
+        this.setZoom(this.state.zoom * (dist / lastDist), mid.x, mid.y);
         lastDist = dist;
       } else if (e.touches.length === 1 && this.state.isPanning) {
         e.preventDefault();
-        this.state.panX = e.touches[0].clientX - this.state.panStartX;
-        this.state.panY = e.touches[0].clientY - this.state.panStartY;
+        const cx = e.touches[0].clientX;
+        const cy = e.touches[0].clientY;
+        this.state.panX = cx - this.state.panStartX;
+        this.state.panY = cy - this.state.panStartY;
+        velX = cx - lastMoveX;
+        velY = cy - lastMoveY;
+        lastMoveX = cx;
+        lastMoveY = cy;
+        lastMoveTime = performance.now();
         this.updatePan();
       }
     }, { passive: false });
 
-    wrapper.addEventListener('touchend', () => {
+    wrapper.addEventListener('touchend', (e) => {
+      if (e.touches.length === 0 && this.state.isPanning) {
+        this.state.isPanning = false;
+        if (Math.abs(velX) > 1 || Math.abs(velY) > 1) startInertia();
+      }
+    });
+
+    wrapper.addEventListener('touchcancel', () => {
       this.state.isPanning = false;
     });
 
-    // Mouse drag pan
+    // --- Mouse drag with inertia ---
     wrapper.addEventListener('mousedown', (e) => {
       if (isInteractive(e)) return;
       if (this.state.isCropping) return;
+      stopInertia();
       this.state.isPanning = true;
       this.state.panStartX = e.clientX - this.state.panX;
       this.state.panStartY = e.clientY - this.state.panY;
+      lastMoveX = e.clientX;
+      lastMoveY = e.clientY;
+      lastMoveTime = performance.now();
+      velX = 0; velY = 0;
       wrapper.style.cursor = 'grabbing';
     });
 
     wrapper.addEventListener('mousemove', (e) => {
-      if (this.state.isPanning) {
-        this.state.panX = e.clientX - this.state.panStartX;
-        this.state.panY = e.clientY - this.state.panStartY;
-        this.updatePan();
-      }
+      if (!this.state.isPanning) return;
+      const cx = e.clientX, cy = e.clientY;
+      this.state.panX = cx - this.state.panStartX;
+      this.state.panY = cy - this.state.panStartY;
+      velX = cx - lastMoveX;
+      velY = cy - lastMoveY;
+      lastMoveX = cx;
+      lastMoveY = cy;
+      lastMoveTime = performance.now();
+      this.updatePan();
     });
 
     wrapper.addEventListener('mouseup', () => {
+      if (!this.state.isPanning) return;
       this.state.isPanning = false;
       wrapper.style.cursor = 'grab';
+      if (Math.abs(velX) > 1 || Math.abs(velY) > 1) startInertia();
     });
 
     wrapper.addEventListener('mouseleave', () => {
+      if (!this.state.isPanning) return;
       this.state.isPanning = false;
       wrapper.style.cursor = 'grab';
     });
 
-    // Zoom buttons
+    // --- Zoom buttons ---
     document.getElementById('zoomInBtn').addEventListener('click', (e) => {
       e.stopPropagation();
       this.setZoom(this.state.zoom + 0.2);
     });
-
     document.getElementById('zoomOutBtn').addEventListener('click', (e) => {
       e.stopPropagation();
       this.setZoom(this.state.zoom - 0.2);
     });
-
     document.getElementById('zoomResetBtn').addEventListener('click', (e) => {
       e.stopPropagation();
       this.resetZoom();
