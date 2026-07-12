@@ -16,21 +16,20 @@ export default {
       if (body.type === 'inpaint') {
         if (!env.AI) return new Response(JSON.stringify({ error: 'AI binding not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-        // Convert base64 to Blob
-        const imageRes = await fetch(body.image);
-        const imageBlob = await imageRes.blob();
-        
-        const maskRes = await fetch(body.mask);
-        const maskBlob = await maskRes.blob();
+        // Convert base64 to Uint8Array directly (fetch(dataURI) is not supported in Workers)
+        const imageBytes = base64ToUint8Array(body.image);
+        const maskBytes = base64ToUint8Array(body.mask);
 
         // Run Inpainting
         const response = await env.AI.run('@cf/runwayml/stable-diffusion-v1-5-inpainting', {
           prompt: "a clean patch of the surrounding area, matching textures and colors",
-          image: Array.from(new Uint8Array(await imageBlob.arrayBuffer())),
-          mask: Array.from(new Uint8Array(await maskBlob.arrayBuffer()))
+          image: Array.from(imageBytes),
+          mask: Array.from(maskBytes)
         });
 
-        return new Response(JSON.stringify({ image: response }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        // The response from SDXL inpainting is an object with an 'image' property (Uint8Array)
+        const base64Image = uint8ArrayToBase64(response);
+        return new Response(JSON.stringify({ image: `data:image/png;base64,${base64Image}` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       // Existing Text Analysis path (Groq)
@@ -66,3 +65,25 @@ export default {
     }
   }
 };
+
+// Helper functions for base64 conversion
+function base64ToUint8Array(base64) {
+  const dataUrlRegex = /^data:image\/\w+;base64,/;
+  const raw = base64.replace(dataUrlRegex, '');
+  const binaryStr = atob(raw);
+  const len = binaryStr.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryStr.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function uint8ArrayToBase64(uint8Array) {
+  let binary = '';
+  const len = uint8Array.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(uint8Array[i]);
+  }
+  return btoa(binary);
+}

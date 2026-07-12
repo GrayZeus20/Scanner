@@ -45,13 +45,16 @@ const app = {
     if (!el) return;
     if (show) {
       el.classList.remove('hidden');
+      el.removeAttribute('inert');
       el.setAttribute('aria-hidden', 'false');
       el.setAttribute('aria-expanded', 'true');
-      lucide.createIcons({ root: el }); // Scope scan to just this element
+      lucide.createIcons({ root: el });
     } else {
       el.classList.add('hidden');
+      el.setAttribute('inert', '');
       el.setAttribute('aria-hidden', 'true');
       el.setAttribute('aria-expanded', 'false');
+      document.activeElement?.blur();
     }
   },
 
@@ -394,12 +397,14 @@ const app = {
 
   updatePan() {
     const canvas = document.getElementById('mainCanvas');
-    // Limit panning to keep image within view or centered
+    // Allow panning even at zoom 1 for a more natural feel
     const limit = (val, max) => Math.max(-max, Math.min(max, val));
-    const maxPan = 500 * (this.state.zoom - 1); 
+    // Provide a reasonable panning area, e.g. 50% of the image size beyond edges
+    const maxPanX = (this.canvas.width * this.state.zoom) / 2;
+    const maxPanY = (this.canvas.height * this.state.zoom) / 2;
     
-    this.state.panX = limit(this.state.panX, maxPan);
-    this.state.panY = limit(this.state.panY, maxPan);
+    this.state.panX = limit(this.state.panX, maxPanX);
+    this.state.panY = limit(this.state.panY, maxPanY);
 
     canvas.style.transform = `scale(${this.state.zoom}) translate(${this.state.panX / this.state.zoom}px, ${this.state.panY / this.state.zoom}px)`;
   },
