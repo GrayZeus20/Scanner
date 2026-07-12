@@ -170,6 +170,12 @@ const app = {
       this.startOcr();
       this.toggleSheet('toolsSheet', false);
     });
+    document.getElementById('toolInpaintBtn').addEventListener('click', () => {
+      this.startInpaint();
+      this.toggleSheet('toolsSheet', false);
+    });
+    document.getElementById('confirmInpaintBtn').addEventListener('click', () => this.confirmInpaint());
+    document.getElementById('cancelInpaintBtn').addEventListener('click', () => this.cancelInpaint());
 
     document.getElementById('closeFilterSheet').addEventListener('click', () => this.toggleSheet('filterSheet', false));
     document.getElementById('closeOcrSheet').addEventListener('click', () => {
@@ -308,7 +314,7 @@ const app = {
     const wrapper = document.getElementById('canvasWrapper');
     const oldZoom = this.state.zoom;
     
-    this.state.zoom = Math.max(1, Math.min(newZoom, 5));
+    this.state.zoom = Math.max(0.3, Math.min(newZoom, 5));
     
     // Adjust pan to zoom toward center
     if (centerX !== undefined && centerY !== undefined) {
@@ -1085,6 +1091,71 @@ const app = {
   cancelOcr() {
     this.state.ocrAborted = true;
     ocrEngine.abort();
+  },
+
+  startInpaint() {
+    if (!this.state.imageLoaded) { this.showToast(t('noImage')); return; }
+    
+    document.getElementById('inpaintOverlay').classList.remove('hidden');
+    document.getElementById('inpaintActionBar').classList.remove('hidden');
+    this.state.isCropping = true;
+
+    inpaint.init();
+    inpaint.reset();
+  },
+
+  async confirmInpaint() {
+    document.getElementById('inpaintProgress').classList.remove('hidden');
+    
+    try {
+      const srcCanvas = this.canvas;
+      const origDataURL = srcCanvas.toDataURL('image/png');
+      const maskDataURL = inpaint.getMaskDataURL();
+      const workerUrl = aiEngine._workerUrl;
+
+      const response = await fetch(workerUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'inpaint',
+          image: origDataURL,
+          mask: maskDataURL
+        })
+      });
+
+      if (!response.ok) throw new Error('Network response was not ok');
+      const data = await response.json();
+      
+      if (!data.image) throw new Error(data.error || 'Inpainting failed');
+
+      const img = new Image();
+      img.onload = () => {
+        srcCanvas.width = img.width;
+        srcCanvas.height = img.height;
+        this.ctx.drawImage(img, 0, 0);
+        
+        this.state.canvasWidth = img.width;
+        this.state.canvasHeight = img.height;
+        this.state.currentImageData = this.ctx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+        this.setCurrentPageImage(img);
+        this.showToast(t('removeDone'));
+      };
+      img.src = data.image.startsWith('data:') ? data.image : 'data:image/png;base64,' + data.image;
+
+    } catch (err) {
+      console.error("Inpaint error:", err);
+      this.showToast(t('removeError') + ': ' + err.message);
+    } finally {
+      document.getElementById('inpaintProgress').classList.add('hidden');
+      this.cancelInpaint();
+    }
+  },
+
+  cancelInpaint() {
+    document.getElementById('inpaintOverlay')?.classList.add('hidden');
+    document.getElementById('inpaintActionBar')?.classList.add('hidden');
+    this.state.isCropping = false;
+    inpaint.clear();
   }
 };
 

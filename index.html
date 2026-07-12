@@ -79,6 +79,29 @@
               </div>
             </div>
             <!-- Crop Action Bar -->
+            <!-- Inpaint Overlay (AI Object Removal) -->
+            <div id="inpaintOverlay" class="inpaint-overlay hidden">
+              <canvas id="maskCanvas" class="mask-canvas"></canvas>
+            </div>
+            <!-- Inpaint Action Bar -->
+            <div id="inpaintActionBar" class="crop-action-bar hidden">
+              <div class="inpaint-toolbar">
+                <label data-i18n="brushSize">Ukuran Kuas</label>
+                <input type="range" id="brushSizeSlider" min="10" max="100" value="30">
+                <span id="brushSizeVal" class="filter-val">30</span>
+              </div>
+              <button id="cancelInpaintBtn" class="crop-action-btn crop-cancel" aria-label="Cancel">
+                <i data-lucide="x" aria-hidden="true"></i>
+              </button>
+              <button id="confirmInpaintBtn" class="crop-action-btn crop-confirm" aria-label="Confirm">
+                <i data-lucide="check" aria-hidden="true"></i>
+              </button>
+            </div>
+            <div id="inpaintProgress" class="inpaint-progress-bar hidden">
+              <i data-lucide="loader" class="spinner" aria-hidden="true"></i>
+              <span data-i18n="removeStarting">AI sedang menghapus...</span>
+            </div>
+
             <div id="cropActionBar" class="crop-action-bar hidden">
               <button id="cancelCropBtn" class="crop-action-btn crop-cancel" aria-label="Cancel">
                 <i data-lucide="x" aria-hidden="true"></i>
@@ -183,6 +206,13 @@
           <div>
             <strong data-i18n="ocr">Teks (OCR)</strong>
             <small data-i18n="ocrDesc">Ekstrak teks dari gambar</small>
+          </div>
+        </button>
+        <button id="toolInpaintBtn" class="tool-action-btn">
+          <i data-lucide="eraser" aria-hidden="true"></i>
+          <div>
+            <strong data-i18n="removeObj">Hapus Objek</strong>
+            <small data-i18n="removeObjDesc">Hapus objek dengan AI</small>
           </div>
         </button>
       </div>
@@ -358,6 +388,7 @@
   <script src="js/pdf-export.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/ocr.js"></script>
+  <script src="js/inpaint.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
