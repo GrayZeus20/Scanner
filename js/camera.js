@@ -100,11 +100,6 @@ const camera = {
       if (capabilities.torch) {
         flashBtn.classList.remove('hidden');
       } else {
-        // Flash might be supported but not in capabilities
-        // Force showing it to let the user try, we handle error in toggleFlash
-        flashBtn.classList.remove('hidden');
-        flashBtn.style.opacity = '0.7';
-      } else {
         flashBtn.classList.add('hidden');
       }
 
