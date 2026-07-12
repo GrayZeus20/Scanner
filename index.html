@@ -25,6 +25,7 @@
         </div>
       </div>
         <div class="header-right">
+          <label for="langSwitcher" class="visually-hidden">Language</label>
           <select id="langSwitcher" class="lang-select">
             <option value="id">ID Indonesia</option>
             <option value="en">Eng English</option>
@@ -86,7 +87,7 @@
             <!-- Inpaint Action Bar -->
             <div id="inpaintActionBar" class="crop-action-bar hidden">
               <div class="inpaint-toolbar">
-                <label data-i18n="brushSize">Ukuran Kuas</label>
+                <label for="brushSizeSlider" data-i18n="brushSize">Ukuran Kuas</label>
                 <input type="range" id="brushSizeSlider" min="10" max="100" value="30">
                 <span id="brushSizeVal" class="filter-val">30</span>
               </div>
@@ -228,56 +229,56 @@
       </div>
       <div class="sheet-body">
         <div class="filter-group">
-          <label data-i18n="brightness">Kecerahan</label>
+          <label for="filterBrightness" data-i18n="brightness">Kecerahan</label>
           <input type="range" id="filterBrightness" min="-100" max="100" value="0" class="filter-slider">
           <span id="brightnessVal" class="filter-val">0</span>
         </div>
         <div class="filter-group">
-          <label data-i18n="contrast">Kontras</label>
+          <label for="filterContrast" data-i18n="contrast">Kontras</label>
           <input type="range" id="filterContrast" min="-100" max="100" value="0" class="filter-slider">
           <span id="contrastVal" class="filter-val">0</span>
         </div>
         <div class="filter-group">
-          <label data-i18n="saturation">Saturasi</label>
+          <label for="filterSaturation" data-i18n="saturation">Saturasi</label>
           <input type="range" id="filterSaturation" min="-100" max="100" value="0" class="filter-slider">
           <span id="saturationVal" class="filter-val">0</span>
         </div>
         <div class="filter-group">
-          <label data-i18n="sharpness">Ketajaman</label>
+          <label for="filterSharpness" data-i18n="sharpness">Ketajaman</label>
           <input type="range" id="filterSharpness" min="0" max="100" value="0" class="filter-slider">
           <span id="sharpnessVal" class="filter-val">0</span>
         </div>
         <div class="filter-divider"></div>
         <div class="filter-group toggle-group">
-          <label data-i18n="grayscale">Abu-abu</label>
+          <label for="filterGrayscale" data-i18n="grayscale">Abu-abu</label>
           <label class="toggle">
             <input type="checkbox" id="filterGrayscale">
             <span class="toggle-slider"></span>
           </label>
         </div>
         <div class="filter-group toggle-group">
-          <label data-i18n="sepia">Sepia</label>
+          <label for="filterSepia" data-i18n="sepia">Sepia</label>
           <label class="toggle">
             <input type="checkbox" id="filterSepia">
             <span class="toggle-slider"></span>
           </label>
         </div>
         <div class="filter-group toggle-group">
-          <label data-i18n="invert">Invert</label>
+          <label for="filterInvert" data-i18n="invert">Invert</label>
           <label class="toggle">
             <input type="checkbox" id="filterInvert">
             <span class="toggle-slider"></span>
           </label>
         </div>
         <div class="filter-group toggle-group">
-          <label data-i18n="bwThreshold">Hitam Putih</label>
+          <label for="filterBW" data-i18n="bwThreshold">Hitam Putih</label>
           <label class="toggle">
             <input type="checkbox" id="filterBW">
             <span class="toggle-slider"></span>
           </label>
         </div>
         <div class="filter-group hidden" id="thresholdGroup">
-          <label data-i18n="threshold">Ambang Batas</label>
+          <label for="filterThreshold" data-i18n="threshold">Ambang Batas</label>
           <input type="range" id="filterThreshold" min="1" max="254" value="128" class="filter-slider">
           <span id="thresholdVal" class="filter-val">128</span>
         </div>
