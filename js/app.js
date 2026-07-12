@@ -229,7 +229,7 @@ const app = {
       if (isInteractive(e)) return;
       if (e.touches.length === 2) {
         lastDist = this.getTouchDistance(e.touches);
-      } else if (e.touches.length === 1 && this.state.zoom > 1) {
+      } else if (e.touches.length === 1) {
         this.state.isPanning = true;
         this.state.panStartX = e.touches[0].clientX - this.state.panX;
         this.state.panStartY = e.touches[0].clientY - this.state.panY;
@@ -260,12 +260,11 @@ const app = {
     // Mouse drag pan
     wrapper.addEventListener('mousedown', (e) => {
       if (isInteractive(e)) return;
-      if (this.state.zoom > 1 && !this.state.isCropping) {
-        this.state.isPanning = true;
-        this.state.panStartX = e.clientX - this.state.panX;
-        this.state.panStartY = e.clientY - this.state.panY;
-        wrapper.style.cursor = 'grabbing';
-      }
+      if (this.state.isCropping) return;
+      this.state.isPanning = true;
+      this.state.panStartX = e.clientX - this.state.panX;
+      this.state.panStartY = e.clientY - this.state.panY;
+      wrapper.style.cursor = 'grabbing';
     });
 
     wrapper.addEventListener('mousemove', (e) => {
@@ -300,6 +299,7 @@ const app = {
     document.getElementById('zoomResetBtn').addEventListener('click', (e) => {
       e.stopPropagation();
       this.resetZoom();
+      this.showToast(t('resetPosition'));
     });
   },
 
@@ -308,7 +308,7 @@ const app = {
     const wrapper = document.getElementById('canvasWrapper');
     const oldZoom = this.state.zoom;
     
-    this.state.zoom = Math.max(0.2, Math.min(newZoom, 5));
+    this.state.zoom = Math.max(1, Math.min(newZoom, 5));
     
     // Adjust pan to zoom toward center
     if (centerX !== undefined && centerY !== undefined) {
@@ -332,6 +332,13 @@ const app = {
 
   updatePan() {
     const canvas = document.getElementById('mainCanvas');
+    // Limit panning to keep image within view or centered
+    const limit = (val, max) => Math.max(-max, Math.min(max, val));
+    const maxPan = 500 * (this.state.zoom - 1); 
+    
+    this.state.panX = limit(this.state.panX, maxPan);
+    this.state.panY = limit(this.state.panY, maxPan);
+
     canvas.style.transform = `scale(${this.state.zoom}) translate(${this.state.panX / this.state.zoom}px, ${this.state.panY / this.state.zoom}px)`;
   },
 
