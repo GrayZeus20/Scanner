@@ -578,11 +578,14 @@ const app = {
         filterThreshold: 'thresholdVal'
       };
 
+      let filterTimeout;
       slider.addEventListener('input', () => {
         this.state.filters[key] = parseFloat(slider.value);
         const valEl = document.getElementById(valMap[id]);
         if (valEl) valEl.textContent = slider.value;
-        this.applyFilters();
+        
+        clearTimeout(filterTimeout);
+        filterTimeout = setTimeout(() => this.applyFilters(), 10);
       });
     });
 
