@@ -96,6 +96,8 @@ const camera = {
       const flashBtn = document.getElementById('flashToggle');
       if (capabilities.torch) {
         flashBtn.classList.remove('hidden');
+      } else {
+        flashBtn.classList.add('hidden');
       }
 
       if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {

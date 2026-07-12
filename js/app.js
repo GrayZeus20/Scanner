@@ -47,6 +47,7 @@ const app = {
       el.classList.remove('hidden');
       el.setAttribute('aria-hidden', 'false');
       el.setAttribute('aria-expanded', 'true');
+      lucide.createIcons({ root: el }); // Scope scan to just this element
     } else {
       el.classList.add('hidden');
       el.setAttribute('aria-hidden', 'true');
@@ -315,6 +316,10 @@ const app = {
     const oldZoom = this.state.zoom;
     
     this.state.zoom = Math.max(0.3, Math.min(newZoom, 5));
+    if (this.state.zoom === 1) {
+      this.state.panX = 0;
+      this.state.panY = 0;
+    }
     
     // Adjust pan to zoom toward center
     if (centerX !== undefined && centerY !== undefined) {
