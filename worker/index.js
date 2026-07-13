@@ -21,15 +21,31 @@ export default {
         const maskBytes = base64ToUint8Array(body.mask);
 
         // Run Inpainting
-        const response = await env.AI.run('@cf/runwayml/stable-diffusion-v1-5-inpainting', {
-          prompt: "a clean patch of the surrounding area, matching textures and colors",
-          image: Array.from(imageBytes),
-          mask: Array.from(maskBytes)
-        });
+        try {
+          const aiResponse = await env.AI.run('@cf/runwayml/stable-diffusion-v1-5-inpainting', {
+            prompt: "a clean patch of the surrounding area, matching textures and colors",
+            image: Array.from(imageBytes),
+            mask: Array.from(maskBytes)
+          });
 
-        // The response from SDXL inpainting is an object with an 'image' property (Uint8Array)
-        const base64Image = uint8ArrayToBase64(response);
-        return new Response(JSON.stringify({ image: `data:image/png;base64,${base64Image}` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          // Handle different response types from Cloudflare AI
+          let imageBytesResult;
+          if (aiResponse instanceof Uint8Array) {
+            imageBytesResult = aiResponse;
+          } else if (aiResponse && aiResponse.image) {
+            imageBytesResult = new Uint8Array(aiResponse.image);
+          } else if (typeof aiResponse === 'string') {
+            // Sometimes it returns base64 directly
+            return new Response(JSON.stringify({ image: aiResponse }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+          } else {
+            throw new Error('Unexpected AI response format');
+          }
+          
+          const base64Image = uint8ArrayToBase64(imageBytesResult);
+          return new Response(JSON.stringify({ image: `data:image/png;base64,${base64Image}` }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        } catch (aiErr) {
+          throw new Error('AI processing failed: ' + aiErr.message);
+        }
       }
 
       // Existing Text Analysis path (Groq)

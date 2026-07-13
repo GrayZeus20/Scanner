@@ -174,6 +174,7 @@ const i18n = {
     ocrCanvasEmpty: 'Canvas is empty or invalid for OCR.',
     ocrCancelled: 'OCR cancelled',
     ocrStarting: 'Starting OCR...',
+    lastPage: 'At least one page must exist.',
     removeObj: 'Remove Object',
     removeObjDesc: 'Remove unwanted objects with AI',
     brushSize: 'Brush Size',

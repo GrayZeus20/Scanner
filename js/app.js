@@ -538,6 +538,8 @@ const app = {
     this.state.pages.forEach((page, idx) => {
       const thumb = document.createElement('div');
       thumb.className = `page-thumb ${idx === this.state.currentPageIndex ? 'active' : ''}`;
+      thumb.draggable = true;
+      thumb.dataset.index = idx;
       
       if (page.originalImage) {
         const img = document.createElement('img');
@@ -548,20 +550,64 @@ const app = {
         thumb.innerHTML = `<span>${idx + 1}</span>`;
       }
 
+      // Remove button
+      const removeBtn = document.createElement('button');
+      removeBtn.innerHTML = '<i data-lucide="x-circle" aria-hidden="true"></i>';
+      removeBtn.className = 'remove-page-btn';
+      removeBtn.onclick = (e) => {
+        e.stopPropagation();
+        this.deletePage(idx);
+      };
+      thumb.appendChild(removeBtn);
+
       thumb.onclick = () => {
         this.renderPage(idx);
         this.updatePagesTray();
       };
+
+      // Drag and drop
+      thumb.ondragstart = (e) => {
+        e.dataTransfer.setData('text/plain', idx);
+      };
+      thumb.ondragover = (e) => e.preventDefault();
+      thumb.ondrop = (e) => {
+        e.preventDefault();
+        const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+        this.reorderPages(fromIdx, idx);
+      };
+
       tray.appendChild(thumb);
     });
 
-    // Auto-scroll to active page
+    lucide.createIcons({ root: tray });
+
     setTimeout(() => {
       const active = tray.querySelector('.page-thumb.active');
       if (active) {
         active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
       }
     }, 100);
+  },
+
+  deletePage(idx) {
+    if (this.state.pages.length <= 1) {
+      this.showToast(t('lastPage'));
+      return;
+    }
+    this.state.pages.splice(idx, 1);
+    if (idx <= this.state.currentPageIndex) {
+      this.state.currentPageIndex = Math.max(0, this.state.currentPageIndex - 1);
+    }
+    this.renderPage(this.state.currentPageIndex);
+    this.updatePagesTray();
+  },
+
+  reorderPages(from, to) {
+    const page = this.state.pages.splice(from, 1)[0];
+    this.state.pages.splice(to, 0, page);
+    this.state.currentPageIndex = to;
+    this.renderPage(to);
+    this.updatePagesTray();
   },
 
   initFilterControls() {
@@ -760,6 +806,9 @@ const app = {
       return;
     }
     this.showToast(t('cropInstruction'));
+    
+    // Reset zoom and pan so crop overlay aligns with the center image
+    this.resetZoom();
     
     const overlay = document.getElementById('cropOverlay');
     const actionBar = document.getElementById('cropActionBar');
@@ -1187,7 +1236,10 @@ const app = {
         })
       });
 
-      if (!response.ok) throw new Error('Network response was not ok');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown server error' }));
+        throw new Error(errorData.error || `Server error: ${response.status}`);
+      }
       const data = await response.json();
       
       if (!data.image) throw new Error(data.error || 'Inpainting failed');

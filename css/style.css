@@ -332,6 +332,34 @@ html, body {
   object-fit: cover;
 }
 
+.remove-page-btn {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--color-destructive);
+  color: white;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.page-thumb:hover .remove-page-btn {
+  opacity: 1;
+}
+
+.remove-page-btn i {
+  width: 10px;
+  height: 10px;
+}
+
 /* ─── Canvas Wrapper for Zoom & Pan ──────────────────────────── */
 .canvas-wrapper {
   flex: 1;

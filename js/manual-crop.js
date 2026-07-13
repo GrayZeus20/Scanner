@@ -122,18 +122,17 @@ const manualCrop = {
     const canvasRect = this.canvas.getBoundingClientRect();
     const wrapperRect = this.wrapper.getBoundingClientRect();
     
-    // Position crop area relative to wrapper
     const cx = canvasRect.left - wrapperRect.left;
     const cy = canvasRect.top - wrapperRect.top;
     const cw = canvasRect.width;
     const ch = canvasRect.height;
-    const margin = Math.min(cw, ch) * 0.05;
+    const margin = 0; // start exactly at image edge, no margin so it snaps to canvas
     
     this.state.corners = {
-      tl: { x: cx + margin, y: cy + margin },
-      tr: { x: cx + cw - margin, y: cy + margin },
-      bl: { x: cx + margin, y: cy + ch - margin },
-      br: { x: cx + cw - margin, y: cy + ch - margin }
+      tl: { x: cx, y: cy },
+      tr: { x: cx + cw, y: cy },
+      bl: { x: cx, y: cy + ch },
+      br: { x: cx + cw, y: cy + ch }
     };
     
     this.area.style.left = cx + 'px';
