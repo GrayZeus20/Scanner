@@ -155,6 +155,12 @@ const manualCrop = {
 
   resetCropArea() {
     if (!this.canvas) return;
+
+    // Reset zoom & pan global agar gambar fix di tengah
+    if (typeof app !== 'undefined' && app.resetZoom) {
+      app.resetZoom();
+    }
+
     const canvasRect = this.canvas.getBoundingClientRect();
     const wrapperRect = this.wrapper.getBoundingClientRect();
     

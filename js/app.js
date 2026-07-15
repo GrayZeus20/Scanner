@@ -260,6 +260,7 @@ const app = {
 
     wrapper.addEventListener('touchstart', (e) => {
       if (isInteractive(e)) return;
+      if (this.state.isCropping) return;
       stopInertia();
       if (e.touches.length === 2) {
         lastDist = this.getTouchDistance(e.touches);
@@ -282,6 +283,7 @@ const app = {
         this.setZoom(this.state.zoom * (dist / lastDist), mid.x, mid.y);
         lastDist = dist;
       } else if (e.touches.length === 1 && this.state.isPanning) {
+        if (this.state.isCropping) return;
         e.preventDefault();
         const cx = e.touches[0].clientX;
         const cy = e.touches[0].clientY;
