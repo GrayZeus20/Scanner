@@ -121,20 +121,26 @@ const aiEngine = {
 
   async analyzeCloud(text, imageDataUrl = null) {
     if (!navigator.onLine) {
-      throw new Error('Tidak ada koneksi internet.');
+      throw new Error('Tidak ada koneksi internet. Gunakan analisis lokal.');
     }
 
-    let prompt = `Analisis dokumen berikut secara mendalam. Berikan:
+    let prompt;
+    let body = {};
+
+    if (imageDataUrl && (!text || text.trim().length === 0)) {
+      prompt = "Analisis gambar dokumen ini secara visual. Jelaskan jenis dokumen, informasi utama, dan data penting yang terlihat.";
+      body = { prompt, image: imageDataUrl };
+    } else if (text && text.trim().length > 0) {
+      prompt = `Analisis dokumen berikut secara mendalam. Berikan:
 1. Jenis Dokumen
 2. Ringkasan Singkat
 3. Poin-Poin Penting (dalam bentuk poin)
 4. Data Terstruktur (jika ada: tanggal, nama, jumlah uang, dll dalam format JSON)
-Teks: ${text}`;
-    let body = { prompt };
 
-    if (imageDataUrl) {
-      prompt = "Analisis gambar ini secara visual. Jelaskan apa yang terlihat di gambar, objek utamanya, dan informasikan jika ada teks yang tidak terbaca oleh OCR.";
-      body = { prompt, image: imageDataUrl };
+Teks OCR: ${text}`;
+      body = { prompt };
+    } else {
+      throw new Error('Tidak ada data untuk dianalisis. Jalankan OCR terlebih dahulu.');
     }
 
     try {

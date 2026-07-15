@@ -50,6 +50,12 @@ export default {
 
       // Existing Text Analysis path (Groq)
       const { prompt } = body;
+      if (!prompt || prompt.trim().length === 0) {
+        return new Response(JSON.stringify({ error: 'Prompt tidak boleh kosong.' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {

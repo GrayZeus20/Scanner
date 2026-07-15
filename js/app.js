@@ -1101,7 +1101,15 @@ const app = {
     const resultDiv = document.getElementById('aiResultArea');
     const btn = document.getElementById('aiAnalyzeBtn');
     const ocrResultDiv = document.getElementById('ocrResult');
-    const text = ocrResultDiv.innerText.trim();
+    const rawText = ocrResultDiv.innerText.trim();
+
+    // Bersihkan teks placeholder / status yang bukan hasil OCR
+    const placeholderTexts = [
+      t('processing'), t('ocrStarting'), t('ocrCancelled'),
+      t('ocrDone'), '(No text detected)', 'Memproses...', 'Memulai OCR...',
+      'ocrStarting', 'OCR cancelled'
+    ];
+    const isResultValid = rawText && !placeholderTexts.some(p => rawText === p || rawText.includes(p));
 
     btn.disabled = true;
     btn.innerHTML = `<i data-lucide="loader" aria-hidden="true"></i> ${t('aiAnalyzing')}`;
@@ -1111,12 +1119,13 @@ const app = {
 
     try {
       let analysis;
-      if (!text || text === '(No text detected)' || text.includes(t('processing'))) {
-        analysis = await aiEngine.analyzeCloud('No text found', this.canvas.toDataURL());
+      if (!isResultValid) {
+        // Tidak ada teks OCR valid → analisis gambar langsung
+        analysis = await aiEngine.analyzeCloud('Analisis dokumen ini berdasarkan gambar.', this.canvas.toDataURL());
       } else {
-        const localResult = await aiEngine.analyzeLocal(text);
+        const localResult = await aiEngine.analyzeLocal(rawText);
         if (aiEngine.isCloudAvailable()) {
-          analysis = await aiEngine.analyzeCloud(text);
+          analysis = await aiEngine.analyzeCloud(rawText);
           analysis.structuredData = localResult.structuredData;
         } else {
           analysis = localResult;
