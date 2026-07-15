@@ -10,6 +10,7 @@ const manualCrop = {
     activeCorner: null,
     startX: 0,
     startY: 0,
+    initialCorners: {},
     corners: { tl: {x: 0, y: 0}, tr: {x: 0, y: 0}, bl: {x: 0, y: 0}, br: {x: 0, y: 0} }
   },
 
@@ -42,6 +43,8 @@ const manualCrop = {
     const pos = this.getPos(e);
     this.state.startX = pos.x;
     this.state.startY = pos.y;
+    // Simpan posisi awal sudut untuk absolute delta
+    this.state.initialCorners = JSON.parse(JSON.stringify(this.state.corners));
     this.showMagnifier();
     this.updateMagnifier(pos);
   },
@@ -54,16 +57,19 @@ const manualCrop = {
     const canvasRect = this.canvas.getBoundingClientRect();
     const wrapperRect = this.wrapper.getBoundingClientRect();
     
+    // Hitung delta dari posisi awal klik
     const dx = pos.x - this.state.startX;
     const dy = pos.y - this.state.startY;
 
     const key = this.state.activeCorner;
+    const init = this.state.initialCorners[key];
     const corner = this.state.corners[key];
 
-    const nextX = corner.x + dx;
-    const nextY = corner.y + dy;
+    // Posisi absolut = posisi awal + delta
+    const nextX = init.x + dx;
+    const nextY = init.y + dy;
 
-    // Constrain within canvas bounds (relative to wrapper)
+    // Batasi dalam area canvas
     const minBoundX = canvasRect.left - wrapperRect.left;
     const minBoundY = canvasRect.top - wrapperRect.top;
     const maxBoundX = canvasRect.right - wrapperRect.left;
@@ -72,8 +78,7 @@ const manualCrop = {
     corner.x = Math.max(minBoundX, Math.min(nextX, maxBoundX));
     corner.y = Math.max(minBoundY, Math.min(nextY, maxBoundY));
 
-    this.state.startX = pos.x;
-    this.state.startY = pos.y;
+    // Update magnifier & view
     this.updateMagnifier(pos);
     this.renderQuadrilateral();
   },
