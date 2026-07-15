@@ -43,6 +43,7 @@ const manualCrop = {
     this.state.startX = pos.x;
     this.state.startY = pos.y;
     this.showMagnifier();
+    this.updateMagnifier(pos);
   },
 
   onMove(e) {
@@ -73,7 +74,31 @@ const manualCrop = {
 
     this.state.startX = pos.x;
     this.state.startY = pos.y;
+    this.updateMagnifier(pos);
     this.renderQuadrilateral();
+  },
+
+  updateMagnifier(pos) {
+    if (!this.magnifier) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+    
+    // Magnifier is inside cropArea, so position relative to it
+    const wrapperRect = this.wrapper.getBoundingClientRect();
+    const areaLeft = parseFloat(this.area.style.left) || 0;
+    const areaTop = parseFloat(this.area.style.top) || 0;
+    const magLeft = (pos.x - wrapperRect.left) - areaLeft + 20;
+    const magTop = (pos.y - wrapperRect.top) - areaTop - 140;
+    
+    this.magnifier.style.left = magLeft + 'px';
+    this.magnifier.style.top = magTop + 'px';
+
+    // Show a 120x120 area centered on cursor
+    const magSize = 120;
+    const bgX = (pos.x - rect.left) * scaleX - magSize / 2;
+    const bgY = (pos.y - rect.top) * scaleY - magSize / 2;
+    this.magnifier.style.backgroundPosition = `${-bgX}px ${-bgY}px`;
   },
 
   onEnd() {
@@ -82,7 +107,12 @@ const manualCrop = {
     this.hideMagnifier();
   },
 
-  showMagnifier() { if (this.magnifier) this.magnifier.style.display = 'block'; },
+  showMagnifier() {
+    if (!this.magnifier) return;
+    this.magnifier.style.display = 'block';
+    this.magnifier.style.backgroundImage = `url(${this.canvas.toDataURL()})`;
+    this.magnifier.style.backgroundSize = `${this.canvas.width}px ${this.canvas.height}px`;
+  },
   hideMagnifier() { if (this.magnifier) this.magnifier.style.display = 'none'; },
   getPos(e) {
     if (e.touches && e.touches.length > 0) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -92,27 +122,28 @@ const manualCrop = {
   renderQuadrilateral() {
     const c = this.state.corners;
     const wrapperRect = this.wrapper.getBoundingClientRect();
-    const areaRect = this.area.getBoundingClientRect();
 
-    // Coordinates for clip-path are relative to the area element itself
-    const txl = c.tl.x - (areaRect.left - wrapperRect.left);
-    const tyl = c.tl.y - (areaRect.top - wrapperRect.top);
-    const txr = c.tr.x - (areaRect.left - wrapperRect.left);
-    const tyr = c.tr.y - (areaRect.top - wrapperRect.top);
-    const bxr = c.br.x - (areaRect.left - wrapperRect.left);
-    const byr = c.br.y - (areaRect.top - wrapperRect.top);
-    const bxl = c.bl.x - (areaRect.left - wrapperRect.left);
-    const byl = c.bl.y - (areaRect.top - wrapperRect.top);
+    // Convert corner positions (wrapper-relative) to area-relative coordinates
+    const areaLeft = parseFloat(this.area.style.left) || 0;
+    const areaTop = parseFloat(this.area.style.top) || 0;
+
+    const txl = c.tl.x - areaLeft;
+    const tyl = c.tl.y - areaTop;
+    const txr = c.tr.x - areaLeft;
+    const tyr = c.tr.y - areaTop;
+    const bxr = c.br.x - areaLeft;
+    const byr = c.br.y - areaTop;
+    const bxl = c.bl.x - areaLeft;
+    const byl = c.bl.y - areaTop;
 
     this.area.style.clipPath = `polygon(${txl}px ${tyl}px, ${txr}px ${tyr}px, ${bxr}px ${byr}px, ${bxl}px ${byl}px)`;
 
-    // Position handles
+    // Position handles relative to the area element
     this.area.querySelectorAll('.crop-handle').forEach(h => {
       const key = h.dataset.handle;
       if (c[key]) {
-        // Handles are absolute relative to the area
-        h.style.left = (c[key].x - areaRect.left + wrapperRect.left - 14) + 'px';
-        h.style.top = (c[key].y - areaRect.top + wrapperRect.top - 14) + 'px';
+        h.style.left = (c[key].x - areaLeft - 14) + 'px';
+        h.style.top = (c[key].y - areaTop - 14) + 'px';
       }
     });
   },

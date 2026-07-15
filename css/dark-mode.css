@@ -141,6 +141,18 @@
   border-color: rgba(255, 255, 255, 0.3);
 }
 
+.dark-mode .camera-switch-btn {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dark-mode .flash-btn.flash-auto {
+  background: rgba(37, 99, 235, 0.5);
+}
+
+.dark-mode .capture-preview {
+  border-color: #334155;
+}
+
 @media (min-width: 1024px) {
   .dark-mode body {
     background: #0A0F1A;

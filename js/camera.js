@@ -3,7 +3,7 @@ const camera = {
   video: document.getElementById('video'),
   captureHandlerBound: false,
   capturedCount: 0,
-  isTorchOn: false,
+  flashMode: 'off', // 'off' | 'auto' | 'on'
   facingMode: 'environment',
 
   bindCaptureHandler() {
@@ -21,7 +21,12 @@ const camera = {
     const videoContainer = document.getElementById('cameraView');
     videoContainer.addEventListener('click', (e) => {
       const t = e.target;
-      if (t.id === 'captureBtn' || t.id === 'finishCamera' || t.id === 'cancelCamera' || t.id === 'flashToggle' || t.id === 'cameraToggle' || t.closest('#captureBtn') || t.closest('.camera-action-btn') || t.closest('.flash-btn')) return;
+      if (t.id === 'captureBtn' || t.id === 'finishCamera' || t.id === 'cancelCamera' || t.id === 'flashToggle' || t.id === 'cameraToggle') return;
+      if (t.closest('.capture-preview')) {
+        this.cancel();
+        return;
+      }
+      if (t.closest('.camera-action-btn') || t.closest('.flash-btn') || t.closest('.camera-switch-btn')) return;
       this.tapToFocus(e);
     });
     
@@ -117,6 +122,8 @@ const camera = {
       if (advancedConstraints.length > 0) {
         await track.applyConstraints({ advanced: advancedConstraints });
       }
+
+      this.updateFlashUI();
     } catch (err) {
       console.warn('Partial camera enhancement failed:', err);
     }
@@ -124,21 +131,26 @@ const camera = {
 
   async toggleFacing() {
     this.facingMode = this.facingMode === 'environment' ? 'user' : 'environment';
-    const cameraToggle = document.getElementById('cameraToggle');
-    if (cameraToggle) {
-      cameraToggle.classList.toggle('active', this.facingMode === 'user');
+    // Restart stream with new facing mode for better compatibility
+    if (this.stream) {
+      this.stream.getTracks().forEach(track => track.stop());
+      this.stream = null;
     }
-    const track = this.stream?.getVideoTracks()[0];
-    if (track) {
-      await track.applyConstraints({ facingMode: this.facingMode });
-    } else {
-      this.stop();
-      this.start();
-    }
+    await this.start();
   },
 
-  capture() {
+  async capture() {
     if (!this.video.videoWidth || !this.video.videoHeight) return;
+
+    // Auto flash: briefly turn on torch
+    const track = this.stream?.getVideoTracks()[0];
+    if (this.flashMode === 'auto' && track?.getCapabilities?.()?.torch) {
+      try {
+        await track.applyConstraints({ advanced: [{ torch: true }] });
+        await new Promise(r => setTimeout(r, 80));
+      } catch (_) {}
+    }
+
     const canvas = document.createElement('canvas');
     canvas.width = this.video.videoWidth;
     canvas.height = this.video.videoHeight;
@@ -149,17 +161,43 @@ const camera = {
     
     this.capturedCount++;
     app.showToast(t('photoCaptured') + this.capturedCount + ' ' + t('photoTaken'));
-    
-    const video = document.getElementById('video');
-    video.style.opacity = '0.5';
-    setTimeout(() => { video.style.opacity = '1'; }, 100);
+
+    // Turn off torch after auto flash
+    if (this.flashMode === 'auto' && track?.getCapabilities?.()?.torch) {
+      try {
+        await track.applyConstraints({ advanced: [{ torch: false }] });
+      } catch (_) {}
+    }
+
+    // Flash animation
+    const flash = document.getElementById('cameraFlash');
+    if (flash) {
+      flash.classList.remove('flash');
+      void flash.offsetWidth;
+      flash.classList.add('flash');
+    }
+
+    // Update counter badge
+    const counter = document.getElementById('captureCounter');
+    if (counter) {
+      counter.textContent = this.capturedCount;
+      counter.classList.remove('hidden');
+    }
+
+    // Update thumbnail preview
+    const preview = document.getElementById('capturePreview');
+    const previewImg = document.getElementById('capturePreviewImg');
+    if (preview && previewImg) {
+      previewImg.src = dataUrl;
+      preview.classList.remove('hidden');
+    }
   },
 
   finish() {
     if (this.capturedCount > 0) {
       app.showToast(this.capturedCount + ' ' + t('photoCount'));
     }
-    if (this.isTorchOn) this.toggleFlash();
+    this.resetCameraUI();
     this.stop();
   },
 
@@ -167,38 +205,81 @@ const camera = {
     if (this.capturedCount > 0) {
       app.showToast(t('captureCancelled'));
     }
-    if (this.isTorchOn) this.toggleFlash();
+    this.resetCameraUI();
     this.stop();
+  },
+
+  resetCameraUI() {
+    this.capturedCount = 0;
+    this.flashMode = 'off';
+    const counter = document.getElementById('captureCounter');
+    if (counter) {
+      counter.textContent = '0';
+      counter.classList.add('hidden');
+    }
+    const preview = document.getElementById('capturePreview');
+    if (preview) {
+      preview.classList.add('hidden');
+    }
+    this.updateFlashUI();
   },
 
   async toggleFlash() {
     const track = this.stream?.getVideoTracks()[0];
     if (!track) return;
 
+    // Cycle: off → auto → on → off
+    const modes = ['off', 'auto', 'on'];
+    const idx = modes.indexOf(this.flashMode);
+    this.flashMode = modes[(idx + 1) % modes.length];
+
     try {
-      this.isTorchOn = !this.isTorchOn;
+      // Turn torch on only in 'on' mode
       await track.applyConstraints({
-        advanced: [{ torch: this.isTorchOn }]
+        advanced: [{ torch: this.flashMode === 'on' }]
       });
-      
-      const flashBtn = document.getElementById('flashToggle');
-      flashBtn.classList.toggle('active', this.isTorchOn);
-      flashBtn.innerHTML = this.isTorchOn ? '<i data-lucide="zap" aria-hidden="true"></i>' : '<i data-lucide="zap-off" aria-hidden="true"></i>';
-      if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+
+      this.updateFlashUI();
     } catch (err) {
-      console.error('Torch error:', err);
+      console.error('Flash error:', err);
       app.showToast(t('flashUnavailable'));
     }
   },
 
+  updateFlashUI() {
+    const flashBtn = document.getElementById('flashToggle');
+    if (!flashBtn) return;
+
+    flashBtn.classList.remove('flash-off', 'flash-auto', 'flash-on');
+    flashBtn.classList.add('flash-' + this.flashMode);
+
+    if (this.flashMode === 'off') {
+      flashBtn.innerHTML = '<i data-lucide="zap-off" aria-hidden="true"></i>';
+      flashBtn.setAttribute('aria-label', t('flashOff'));
+    } else if (this.flashMode === 'auto') {
+      flashBtn.innerHTML = '<i data-lucide="zap" aria-hidden="true"></i><span class="flash-label">A</span>';
+      flashBtn.setAttribute('aria-label', 'Flash Auto');
+    } else {
+      flashBtn.innerHTML = '<i data-lucide="zap" aria-hidden="true"></i>';
+      flashBtn.setAttribute('aria-label', t('flashOn'));
+    }
+    if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+  },
+
   stop() {
     if (this.stream) {
+      // Ensure torch is off before stopping
+      const track = this.stream?.getVideoTracks()[0];
+      if (track?.applyConstraints) {
+        track.applyConstraints({ advanced: [{ torch: false }] }).catch(() => {});
+      }
       this.stream.getTracks().forEach(track => track.stop());
       this.stream = null;
     }
     if (this.video) {
       this.video.srcObject = null;
     }
+    this.flashMode = 'off';
     this.facingMode = 'environment';
     document.getElementById('cameraView')?.classList.add('hidden');
     if (app.state.imageLoaded) {

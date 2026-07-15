@@ -130,27 +130,34 @@
 
       <!-- Camera View -->
       <div id="cameraView" class="hidden">
+        <div id="cameraFlash" class="camera-flash" aria-hidden="true"></div>
         <video id="video" autoplay playsinline></video>
-        <button id="flashToggle" class="flash-btn hidden" aria-label="Toggle Flash">
-          <i data-lucide="zap-off" aria-hidden="true"></i>
-        </button>
+        <div class="camera-top-bar">
+          <button id="flashToggle" class="flash-btn hidden" aria-label="Toggle Flash">
+            <i data-lucide="zap-off" aria-hidden="true"></i>
+          </button>
+          <button id="cameraToggle" class="camera-switch-btn" aria-label="Switch Camera">
+            <i data-lucide="switch-camera" aria-hidden="true"></i>
+          </button>
+        </div>
         <div class="camera-overlay">
           <div class="frame-guide" aria-hidden="true"></div>
           <div id="focusIndicator" class="focus-indicator hidden" aria-hidden="true"></div>
         </div>
         <div class="camera-controls">
-          <button id="finishCamera" class="camera-action-btn success-btn" aria-label="Finish Capture">
-            <i data-lucide="check" aria-hidden="true"></i>
+          <button id="cancelCamera" class="camera-action-btn danger-btn" aria-label="Cancel Capture">
+            <i data-lucide="x" aria-hidden="true"></i>
           </button>
           <button id="captureBtn" class="capture-btn" aria-label="Capture Photo">
             <i data-lucide="circle" aria-hidden="true"></i>
           </button>
-          <button id="cancelCamera" class="camera-action-btn danger-btn" aria-label="Cancel Capture">
-            <i data-lucide="x" aria-hidden="true"></i>
+          <button id="finishCamera" class="camera-action-btn success-btn" aria-label="Finish Capture">
+            <i data-lucide="check" aria-hidden="true"></i>
+            <span id="captureCounter" class="capture-counter hidden">0</span>
           </button>
-          <button id="cameraToggle" class="camera-action-btn" aria-label="Switch Camera">
-            <i data-lucide="refresh-cw" aria-hidden="true"></i>
-          </button>
+        </div>
+        <div id="capturePreview" class="capture-preview hidden">
+          <img id="capturePreviewImg" src="" alt="Last captured">
         </div>
       </div>
 

@@ -1209,6 +1209,9 @@ const app = {
   startInpaint() {
     if (!this.state.imageLoaded) { this.showToast(t('noImage')); return; }
     
+    // Reset zoom agar koordinat masker presisi
+    this.resetZoom();
+
     document.getElementById('inpaintOverlay').classList.remove('hidden');
     document.getElementById('inpaintActionBar').classList.remove('hidden');
     this.state.isCropping = true;

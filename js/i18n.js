@@ -65,6 +65,7 @@ const i18n = {
     aiStarting: 'Memulai analisis...',
     flashOn: 'Flash Aktif',
     flashOff: 'Flash Tidak Aktif',
+    flashAuto: 'Flash Otomatis',
     flashUnavailable: 'Flash tidak tersedia di perangkat ini',
     photoCount: 'foto berhasil disimpan',
     photoCaptured: 'Foto ke-',
@@ -90,6 +91,7 @@ const i18n = {
     removeStarting: 'AI sedang menghapus...',
     removeDone: 'Objek berhasil dihapus',
     removeError: 'Gagal menghapus objek',
+    resetPosition: 'Posisi direset',
     appName: 'WebScanner',
     emptyTitle: 'No document yet',
     emptyDesc: 'Take a photo or import an image to start',
@@ -155,6 +157,7 @@ const i18n = {
     aiStarting: 'Starting analysis...',
     flashOn: 'Flash On',
     flashOff: 'Flash Off',
+    flashAuto: 'Flash Auto',
     flashUnavailable: 'Flash is not available on this device',
     photoCount: 'photos saved',
     photoCaptured: 'Photo #',
@@ -182,6 +185,7 @@ const i18n = {
     removeStarting: 'AI is removing...',
     removeDone: 'Object removed successfully',
     removeError: 'Failed to remove object',
+    resetPosition: 'Position reset',
   },
 };
 
