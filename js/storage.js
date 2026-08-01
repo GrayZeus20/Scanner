@@ -1,6 +1,6 @@
 const storage = {
-  dbName: 'WebScannerDB',
-  storeName: 'scans',
+  dbName: config.STORAGE.dbName,
+  storeName: config.STORAGE.storeName,
   db: null,
   initPromise: null,
 
@@ -8,7 +8,7 @@ const storage = {
     if (this.initPromise) return this.initPromise;
 
     this.initPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.dbName, 1);
+      const request = indexedDB.open(this.dbName, config.STORAGE.version);
 
       request.onupgradeneeded = (e) => {
         const db = e.target.result;

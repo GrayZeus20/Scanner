@@ -4,7 +4,7 @@ const ocrEngine = {
 
   async getWorker() {
     if (this.worker) return this.worker;
-    this.worker = await Tesseract.createWorker('ind+eng', 1, {
+    this.worker = await Tesseract.createWorker(config.OCR.lang, 1, {
       logger: m => {
         if (this._progressCallback && m.status === 'recognizing text') {
           this._progressCallback(m.progress);
@@ -47,7 +47,7 @@ const ocrEngine = {
             clearInterval(checkInterval);
             this.terminate(); // Terminate and reset
             reject(new Error(t('ocrTimedOut')));
-          }, 60000);
+          }, config.OCR.timeout);
         })
       ]);
 

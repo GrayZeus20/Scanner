@@ -85,6 +85,7 @@ const i18n = {
     ocrCanvasEmpty: 'Canvas kosong atau tidak valid untuk OCR.',
     ocrCancelled: 'OCR dibatalkan',
     ocrStarting: 'Memulai OCR...',
+    lastPage: 'Halaman minimal harus ada satu.',
     removeObj: 'Hapus Objek',
     removeObjDesc: 'Hapus objek yang mengganggu',
     brushSize: 'Ukuran Kuas',
@@ -93,6 +94,9 @@ const i18n = {
     removeDone: 'Objek berhasil dihapus',
     removeError: 'Gagal menghapus objek',
     resetPosition: 'Posisi direset',
+  },
+
+  en: {
     appName: 'WebScanner',
     emptyTitle: 'No document yet',
     emptyDesc: 'Take a photo or import an image to start',
@@ -177,7 +181,6 @@ const i18n = {
     ocrTimedOut: 'OCR timed out. Image may be too large or complex.',
     ocrCanvasEmpty: 'Canvas is empty or invalid for OCR.',
     ocrCancelled: 'OCR cancelled',
-    ocrStarting: 'Starting OCR...',
     ocrStarting: 'Starting OCR...',
     lastPage: 'At least one page must exist.',
     removeObj: 'Remove Object',

@@ -17,6 +17,8 @@ const app = {
       threshold: 128
     },
     ocrAborted: false,
+    isAnalyzing: false,
+    isOcrRunning: false,
     zoom: 1,
     panX: 0,
     panY: 0,
@@ -198,7 +200,21 @@ const app = {
 
     document.getElementById('copyOcrBtn').addEventListener('click', () => {
       const text = document.getElementById('ocrResult').innerText;
-      navigator.clipboard.writeText(text).then(() => this.showToast(t('saved')));
+      navigator.clipboard.writeText(text)
+        .then(() => this.showToast(t('saved')))
+        .catch(() => {
+          const textarea = document.createElement('textarea');
+          textarea.value = text;
+          document.body.appendChild(textarea);
+          textarea.select();
+          try {
+            document.execCommand('copy');
+            this.showToast(t('saved'));
+          } catch (err) {
+            this.showToast(t('error'));
+          }
+          document.body.removeChild(textarea);
+        });
     });
 
     document.getElementById('aiAnalyzeBtn').addEventListener('click', () => this.runAiAnalysis());
@@ -489,7 +505,7 @@ const app = {
   renderImage(img) {
     const canvas = this.canvas;
     const ctx = this.ctx;
-    const MAX_SIZE = 2000;
+    const MAX_SIZE = config.IMAGE_MAX_SIZE;
     
     let w = img.width;
     let h = img.height;
@@ -905,7 +921,7 @@ const app = {
 
     let srcW = img.width;
     let srcH = img.height;
-    const MAX_SIZE = 2000;
+    const MAX_SIZE = config.IMAGE_MAX_SIZE;
     if (srcW > MAX_SIZE || srcH > MAX_SIZE) {
       const ratio = Math.min(MAX_SIZE / srcW, MAX_SIZE / srcH);
       srcW = Math.floor(srcW * ratio);
@@ -958,7 +974,7 @@ const app = {
     const img = page ? page.originalImage : null;
     if (!img) return;
 
-    const MAX_SIZE = 2000;
+    const MAX_SIZE = config.IMAGE_MAX_SIZE;
     let w = img.width;
     let h = img.height;
     if (w > MAX_SIZE || h > MAX_SIZE) {
@@ -1082,30 +1098,32 @@ const app = {
   },
 
   async autoEnhance() {
-    this.state.filters.sharpness = 30;
-    this.state.filters.contrast = 20;
+    this.state.filters.sharpness = config.AUTO_ENHANCE.sharpness;
+    this.state.filters.contrast = config.AUTO_ENHANCE.contrast;
     
     const sharpnessSlider = document.getElementById('filterSharpness');
     if (sharpnessSlider) {
-      sharpnessSlider.value = 30;
-      document.getElementById('sharpnessVal').textContent = '30';
+      sharpnessSlider.value = config.AUTO_ENHANCE.sharpness;
+      document.getElementById('sharpnessVal').textContent = String(config.AUTO_ENHANCE.sharpness);
     }
     const contrastSlider = document.getElementById('filterContrast');
     if (contrastSlider) {
-      contrastSlider.value = 20;
-      document.getElementById('contrastVal').textContent = '20';
+      contrastSlider.value = config.AUTO_ENHANCE.contrast;
+      document.getElementById('contrastVal').textContent = String(config.AUTO_ENHANCE.contrast);
     }
     
     this.applyFilters();
   },
 
   async runAiAnalysis() {
+    if (this.state.isAnalyzing) return;
+    this.state.isAnalyzing = true;
+
     const resultDiv = document.getElementById('aiResultArea');
     const btn = document.getElementById('aiAnalyzeBtn');
     const ocrResultDiv = document.getElementById('ocrResult');
     const rawText = ocrResultDiv.innerText.trim();
 
-    // Bersihkan teks placeholder / status yang bukan hasil OCR
     const placeholderTexts = [
       t('processing'), t('ocrStarting'), t('ocrCancelled'),
       t('ocrDone'), '(No text detected)', 'Memproses...', 'Memulai OCR...',
@@ -1122,7 +1140,6 @@ const app = {
     try {
       let analysis;
       if (!isResultValid) {
-        // Tidak ada teks OCR valid → analisis gambar langsung
         analysis = await aiEngine.analyzeCloud('Analisis dokumen ini berdasarkan gambar.', this.canvas.toDataURL());
       } else {
         const localResult = await aiEngine.analyzeLocal(rawText);
@@ -1150,6 +1167,7 @@ const app = {
     } catch (err) {
       resultDiv.innerText = 'Error: ' + err.message;
     } finally {
+      this.state.isAnalyzing = false;
       btn.disabled = false;
       btn.innerHTML = `<i data-lucide="sparkles" aria-hidden="true"></i> ${t('aiAnalyze')}`;
       lucide.createIcons();
@@ -1177,10 +1195,12 @@ const app = {
   },
 
   async startOcr() {
+    if (this.state.isOcrRunning) return;
     if (!this.state.imageLoaded || !this.state.pages[this.state.currentPageIndex]) {
       this.showToast(t('noImage'));
       return;
     }
+    this.state.isOcrRunning = true;
 
     this.toggleSheet('ocrSheet', true);
     lucide.createIcons();
@@ -1207,6 +1227,7 @@ const app = {
         resultDiv.innerText = 'Error: ' + err.message;
       }
     } finally {
+      this.state.isOcrRunning = false;
       this.showOcrProgress(false);
       lucide.createIcons();
     }
@@ -1239,7 +1260,10 @@ const app = {
       const origDataURL = srcCanvas.toDataURL('image/png');
       const maskDataURL = inpaint.getMaskDataURL();
       const workerUrl = aiEngine._workerUrl;
+      if (!workerUrl) throw new Error('AI service not configured');
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), config.AI.timeout);
       const response = await fetch(workerUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1247,8 +1271,10 @@ const app = {
           type: 'inpaint',
           image: origDataURL,
           mask: maskDataURL
-        })
+        }),
+        signal: controller.signal
       });
+      clearTimeout(timeout);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown server error' }));

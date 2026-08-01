@@ -131,7 +131,21 @@ const camera = {
 
   async toggleFacing() {
     this.facingMode = this.facingMode === 'environment' ? 'user' : 'environment';
-    // Restart stream with new facing mode for better compatibility
+    
+    // Attempt to update existing stream first
+    if (this.stream) {
+      const track = this.stream.getVideoTracks()[0];
+      try {
+        await track.applyConstraints({
+          facingMode: { exact: this.facingMode }
+        });
+        return;
+      } catch (err) {
+        console.warn('applyConstraints failed, falling back to restart', err);
+      }
+    }
+    
+    // Restart stream if applyConstraints is not supported or failed
     if (this.stream) {
       this.stream.getTracks().forEach(track => track.stop());
       this.stream = null;

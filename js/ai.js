@@ -1,6 +1,6 @@
 const aiEngine = {
   // Ganti URL ini dengan URL Cloudflare Worker Anda setelah deploy
-  _workerUrl: 'https://scanner-ai-proxy.ace-suka-main-game.workers.dev',
+  _workerUrl: config.AI.workerUrl,
   _useCloudProxy: true, // Set false jika ingin langsung ke Gemini (tidak disarankan)
   
   isCloudAvailable() {
@@ -145,7 +145,7 @@ Teks OCR: ${text}`;
 
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000);
+      const timeout = setTimeout(() => controller.abort(), config.AI.timeout);
 
       const response = await fetch(this._workerUrl, {
         method: 'POST',
