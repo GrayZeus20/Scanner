@@ -4,7 +4,7 @@ const ocrEngine = {
 
   async getWorker() {
     if (this.worker) return this.worker;
-    this.worker = await Tesseract.createWorker(config.OCR.lang, 1, {
+    this.worker = await Tesseract.createWorker(config.OCR.langs, 1, {
       logger: m => {
         if (this._progressCallback && m.status === 'recognizing text') {
           this._progressCallback(m.progress);
@@ -33,19 +33,23 @@ const ocrEngine = {
         throw new Error(t('ocrCancelled'));
       }
 
+      let checkInterval;
       const result = await Promise.race([
-        worker.recognize(canvas),
+        worker.recognize(canvas).then(res => {
+          clearInterval(checkInterval);
+          return res;
+        }),
         new Promise((_, reject) => {
-          const checkInterval = setInterval(() => {
+          checkInterval = setInterval(() => {
             if (this._abortFlag || (abortCheck && abortCheck())) {
               clearInterval(checkInterval);
-              this.terminate(); // Terminate and reset
+              this.terminate();
               reject(new Error(t('ocrCancelled')));
             }
           }, 200);
           setTimeout(() => {
             clearInterval(checkInterval);
-            this.terminate(); // Terminate and reset
+            this.terminate();
             reject(new Error(t('ocrTimedOut')));
           }, config.OCR.timeout);
         })

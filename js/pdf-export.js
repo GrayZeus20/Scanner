@@ -1,5 +1,5 @@
 const pdfExport = {
-  async exportToPdf(canvases) {
+  async exportToPdf(canvases, qualityOverride) {
     if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
       throw new Error('jsPDF library tidak tersedia. Coba perbarui halaman.');
     }
@@ -10,6 +10,7 @@ const pdfExport = {
     const pdfHeight = pdf.internal.pageSize.getHeight();
 
     const canvasList = Array.isArray(canvases) ? canvases : [canvases];
+    const quality = qualityOverride || 0.85;
 
     if (canvasList.length === 0) {
       throw new Error('Tidak ada halaman untuk diekspor.');
@@ -21,7 +22,6 @@ const pdfExport = {
         throw new Error('Salah satu halaman tidak valid.');
       }
 
-      // --- FIX: Ensure white background to prevent PDF color shifts ---
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = canvas.width;
       tempCanvas.height = canvas.height;
@@ -29,8 +29,8 @@ const pdfExport = {
       tempCtx.fillStyle = '#FFFFFF';
       tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
       tempCtx.drawImage(canvas, 0, 0);
-      
-      const imgData = tempCanvas.toDataURL('image/jpeg', 0.95);
+
+      const imgData = tempCanvas.toDataURL('image/jpeg', quality);
       
       const canvasRatio = canvas.width / canvas.height;
       const pdfRatio = pdfWidth / pdfHeight;
@@ -55,9 +55,9 @@ const pdfExport = {
     return true;
   },
 
-  exportToImage(canvas, format) {
+  exportToImage(canvas, format, customName, qualityOverride) {
     const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
-    const quality = format === 'png' ? 1 : 0.92;
+    const quality = format === 'png' ? 1 : (qualityOverride || 0.85);
 
     if (!canvas || canvas.width === 0 || canvas.height === 0) {
       throw new Error('Canvas tidak valid untuk ekspor.');
@@ -65,10 +65,8 @@ const pdfExport = {
 
     let dataURL;
     if (format === 'png') {
-        // PNG supports transparency: no background fill needed
         dataURL = canvas.toDataURL(mimeType, quality);
     } else {
-        // JPEG doesn't support transparency: add white background
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = canvas.width;
         tempCanvas.height = canvas.height;
@@ -80,7 +78,7 @@ const pdfExport = {
     }
 
     const link = document.createElement('a');
-    link.download = 'scan_' + Date.now() + '.' + format;
+    link.download = customName || ('scan_' + Date.now() + '.' + format);
     link.href = dataURL;
     document.body.appendChild(link);
     link.click();

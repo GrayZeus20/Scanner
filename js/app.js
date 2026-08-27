@@ -19,12 +19,16 @@ const app = {
     ocrAborted: false,
     isAnalyzing: false,
     isOcrRunning: false,
+    isFilterWorkerRunning: false,
     zoom: 1,
     panX: 0,
     panY: 0,
     isPanning: false,
     lastPinchDist: 0,
-    isCropping: false
+    isCropping: false,
+    undoStack: [],
+    redoStack: [],
+    maxUndoSteps: 30
   },
 
   canvas: document.getElementById('mainCanvas'),
@@ -46,17 +50,40 @@ const app = {
     const el = document.getElementById(id);
     if (!el) return;
     if (show) {
+      // Create backdrop
+      const backdrop = document.createElement('div');
+      backdrop.className = 'sheet-backdrop';
+      backdrop.id = 'sheetBackdrop';
+      backdrop.addEventListener('click', () => this.toggleSheet(id, false));
+      document.body.appendChild(backdrop);
+
       el.classList.remove('hidden');
       el.removeAttribute('inert');
       el.setAttribute('aria-hidden', 'false');
       el.setAttribute('aria-expanded', 'true');
       lucide.createIcons({ root: el });
+
+      // Focus first interactive element
+      const firstFocusable = el.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (firstFocusable) firstFocusable.focus();
     } else {
-      el.classList.add('hidden');
-      el.setAttribute('inert', '');
-      el.setAttribute('aria-hidden', 'true');
-      el.setAttribute('aria-expanded', 'false');
-      document.activeElement?.blur();
+      // Exit animation
+      el.classList.add('sheet-exit');
+      const backdrop = document.getElementById('sheetBackdrop');
+      if (backdrop) backdrop.classList.add('backdrop-exit');
+
+      setTimeout(() => {
+        el.classList.remove('sheet-exit');
+        el.classList.add('hidden');
+        el.setAttribute('inert', '');
+        el.setAttribute('aria-hidden', 'true');
+        el.setAttribute('aria-expanded', 'false');
+        document.activeElement?.blur();
+
+        // Remove backdrop
+        const bd = document.getElementById('sheetBackdrop');
+        if (bd) bd.remove();
+      }, 200);
     }
   },
 
@@ -85,7 +112,10 @@ const app = {
     this.syncDarkModeUI();
     camera.bindCaptureHandler();
     lucide.createIcons();
-    storage.init().catch(console.warn);
+    storage.init().catch(err => {
+      console.warn('Storage init failed:', err);
+      this.showToast(t('storageError'), 'error');
+    });
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').then(reg => {
@@ -93,7 +123,7 @@ const app = {
           const newWorker = reg.installing;
           newWorker.addEventListener('statechange', () => {
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              this.showToast('New version available. Reload to update.');
+              this.showToast(t('newVersion'), 'info');
             }
           });
         });
@@ -109,6 +139,33 @@ const app = {
   },
 
   initEventListeners() {
+    // Escape key to close sheets
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        // Close crop overlay first
+        if (this.state.isCropping) {
+          const cropOverlay = document.getElementById('cropOverlay');
+          const inpaintOverlay = document.getElementById('inpaintOverlay');
+          if (cropOverlay && !cropOverlay.classList.contains('hidden')) {
+            this.cancelManualCrop();
+            return;
+          }
+          if (inpaintOverlay && !inpaintOverlay.classList.contains('hidden')) {
+            this.cancelInpaint();
+            return;
+          }
+        }
+        const sheets = ['toolsSheet', 'filterSheet', 'ocrSheet', 'exportSheet'];
+        for (const sheetId of sheets) {
+          const sheet = document.getElementById(sheetId);
+          if (sheet && !sheet.classList.contains('hidden')) {
+            this.toggleSheet(sheetId, false);
+            break;
+          }
+        }
+      }
+    });
+
     document.getElementById('langSwitcher').addEventListener('change', (e) => {
       this.state.lang = e.target.value;
       localStorage.setItem('scanner.lang', this.state.lang);
@@ -144,6 +201,35 @@ const app = {
       }
     });
 
+    // Drag and drop support
+    const mainEl = document.getElementById('main');
+    const preventDefaults = (e) => { e.preventDefault(); e.stopPropagation(); };
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      mainEl.addEventListener(eventName, preventDefaults, false);
+      document.body.addEventListener(eventName, preventDefaults, false);
+    });
+
+    mainEl.addEventListener('dragenter', () => mainEl.classList.add('drag-over'));
+    mainEl.addEventListener('dragover', () => mainEl.classList.add('drag-over'));
+    mainEl.addEventListener('dragleave', (e) => {
+      if (!mainEl.contains(e.relatedTarget)) {
+        mainEl.classList.remove('drag-over');
+      }
+    });
+
+    mainEl.addEventListener('drop', (e) => {
+      mainEl.classList.remove('drag-over');
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        Array.from(files).forEach(file => {
+          if (file.type.startsWith('image/')) {
+            this.loadFile(file);
+          }
+        });
+      }
+    });
+
     document.getElementById('navHistory').addEventListener('click', () => {
       this.setActiveNav('navHistory');
       camera.stop();
@@ -167,6 +253,15 @@ const app = {
     });
     document.getElementById('confirmCropBtn').addEventListener('click', () => this.confirmManualCrop());
     document.getElementById('cancelCropBtn').addEventListener('click', () => this.cancelManualCrop());
+
+    // Crop preset ratio buttons
+    document.querySelectorAll('.crop-preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.crop-preset-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        manualCrop.setRatio(btn.dataset.ratio);
+      });
+    });
     document.getElementById('toolFilterBtn').addEventListener('click', () => {
       this.toggleSheet('filterSheet', true);
       this.toggleSheet('toolsSheet', false);
@@ -187,6 +282,7 @@ const app = {
     document.getElementById('closeOcrSheet').addEventListener('click', () => {
       this.cancelOcr();
       this.toggleSheet('ocrSheet', false);
+      ocrEngine.terminate();
     });
     document.getElementById('cancelOcrBtn')?.addEventListener('click', () => {
       this.cancelOcr();
@@ -197,6 +293,10 @@ const app = {
       lucide.createIcons();
     });
     document.getElementById('closeExportSheet').addEventListener('click', () => this.toggleSheet('exportSheet', false));
+    document.getElementById('shareBtn').addEventListener('click', () => this.shareDoc());
+    if (!navigator.share) {
+      document.getElementById('shareBtn').classList.add('hidden');
+    }
 
     document.getElementById('copyOcrBtn').addEventListener('click', () => {
       const text = document.getElementById('ocrResult').innerText;
@@ -218,6 +318,9 @@ const app = {
     });
 
     document.getElementById('aiAnalyzeBtn').addEventListener('click', () => this.runAiAnalysis());
+
+    document.getElementById('undoBtn').addEventListener('click', () => this.undo());
+    document.getElementById('redoBtn').addEventListener('click', () => this.redo());
 
     this.initFilterControls();
     this.initExportButtons();
@@ -450,6 +553,7 @@ const app = {
     const darkToggle = document.getElementById('darkToggle');
     if (darkToggle) {
       darkToggle.innerHTML = `<i data-lucide="${this.state.darkMode ? 'sun' : 'moon'}" aria-hidden="true"></i>`;
+      darkToggle.setAttribute('aria-label', this.state.darkMode ? t('switchToLight') : t('switchToDark'));
     }
     document.body.classList.toggle('dark-mode', this.state.darkMode);
     lucide.createIcons();
@@ -572,6 +676,7 @@ const app = {
       const removeBtn = document.createElement('button');
       removeBtn.innerHTML = '<i data-lucide="x-circle" aria-hidden="true"></i>';
       removeBtn.className = 'remove-page-btn';
+      removeBtn.setAttribute('aria-label', t('removePage'));
       removeBtn.onclick = (e) => {
         e.stopPropagation();
         this.deletePage(idx);
@@ -685,14 +790,30 @@ const app = {
     document.getElementById('flipVBtn').addEventListener('click', () => this.flip('vertical'));
 
     document.getElementById('resetFilterBtn').addEventListener('click', () => this.resetFilters());
+    document.getElementById('compareFilterBtn').addEventListener('mousedown', () => this.showOriginal());
+    document.getElementById('compareFilterBtn').addEventListener('mouseup', () => { this._filterPending = false; this.applyFilters(); });
+    document.getElementById('compareFilterBtn').addEventListener('touchstart', (e) => { e.preventDefault(); this.showOriginal(); });
+    document.getElementById('compareFilterBtn').addEventListener('touchend', (e) => { e.preventDefault(); this._filterPending = false; this.applyFilters(); });
   },
 
   initExportButtons() {
+    const qualitySlider = document.getElementById('exportQuality');
+    const qualityVal = document.getElementById('exportQualityVal');
+    if (qualitySlider) {
+      qualitySlider.addEventListener('input', () => {
+        if (qualityVal) qualityVal.textContent = qualitySlider.value + '%';
+      });
+    }
+
     document.querySelectorAll('.export-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const format = btn.dataset.format;
         const canvas = this.canvas;
-        if (format === 'pdf') {
+        const quality = qualitySlider ? parseInt(qualitySlider.value) / 100 : 0.85;
+        if (format === 'pdf' || format === 'batchPdf') {
+          this.toggleSheet('exportSheet', false);
+          this.showPdfPreview();
+          return;
           const pagesCanvases = this.state.pages.map(page => {
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = canvas.width;
@@ -703,6 +824,8 @@ const app = {
               `contrast(${100 + this.state.filters.contrast}%)`,
               `saturate(${100 + this.state.filters.saturation}%)`,
               this.state.filters.grayscale ? 'grayscale(100%)' : '',
+              this.state.filters.sepia ? 'sepia(100%)' : '',
+              this.state.filters.invert ? 'invert(100%)' : '',
             ].filter(Boolean).join(' ');
             tempCtx.drawImage(page.originalImage, 0, 0);
             if (this.state.filters.bw) {
@@ -718,7 +841,7 @@ const app = {
             return tempCanvas;
           });
 
-          pdfExport.exportToPdf(pagesCanvases).then(() => {
+          pdfExport.exportToPdf(pagesCanvases, quality).then(() => {
             this.showToast(t('saved'));
             storage.saveScan(canvas, 'multi_scan_' + Date.now()).catch((err) => {
               if (err?.name === 'QuotaExceededError') {
@@ -728,8 +851,29 @@ const app = {
               }
             });
           });
+        } else if (format === 'batchJpg') {
+          this.state.pages.forEach((page, i) => {
+            const img = page.originalImage;
+            const tempCanvas = document.createElement('canvas');
+            const w = img.naturalWidth || img.width;
+            const h = img.naturalHeight || img.height;
+            tempCanvas.width = w;
+            tempCanvas.height = h;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.filter = [
+              `brightness(${100 + this.state.filters.brightness}%)`,
+              `contrast(${100 + this.state.filters.contrast}%)`,
+              `saturate(${100 + this.state.filters.saturation}%)`,
+              this.state.filters.grayscale ? 'grayscale(100%)' : '',
+              this.state.filters.sepia ? 'sepia(100%)' : '',
+              this.state.filters.invert ? 'invert(100%)' : '',
+            ].filter(Boolean).join(' ');
+            tempCtx.drawImage(img, 0, 0, w, h);
+            pdfExport.exportToImage(tempCanvas, 'jpg', `scan_${Date.now()}_${i + 1}.jpg`, quality);
+          });
+          storage.saveScan(canvas, 'multi_scan_' + Date.now()).catch(console.warn);
         } else {
-          pdfExport.exportToImage(canvas, format);
+          pdfExport.exportToImage(canvas, format, null, quality);
           storage.saveScan(canvas, 'scan_' + Date.now()).catch((err) => {
             if (err?.name === 'QuotaExceededError') {
               this.showToast(t('storageFull'));
@@ -743,79 +887,109 @@ const app = {
     });
   },
 
-  applyFilters() {
-    if (!this.state.imageLoaded) return;
-    const page = this.state.pages[this.state.currentPageIndex];
-    if (!page || !page.originalImage) return;
-
-    const filters = this.state.filters;
-    const canvas = this.canvas;
-    const ctx = this.ctx;
-    const img = page.originalImage;
-
-    const w = this.state.canvasWidth;
-    const h = this.state.canvasHeight;
-
-    ctx.filter = [
-      `brightness(${100 + filters.brightness}%)`,
-      `contrast(${100 + filters.contrast}%)`,
-      `saturate(${100 + filters.saturation}%)`,
-      filters.grayscale ? 'grayscale(100%)' : '',
-      filters.sepia ? 'sepia(100%)' : '',
-      filters.invert ? 'invert(100%)' : '',
-    ].filter(Boolean).join(' ');
-
-    ctx.clearRect(0, 0, w, h);
-    ctx.drawImage(img, 0, 0, w, h);
-
-    if (filters.bw) {
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-      for (let i = 0; i < data.length; i += 4) {
-        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-        const val = avg > filters.threshold ? 255 : 0;
-        data[i] = data[i + 1] = data[i + 2] = val;
+  async shareDoc() {
+    if (!navigator.share) {
+      this.showToast(t('error'));
+      return;
+    }
+    try {
+      const blob = await new Promise(r => this.canvas.toBlob(r, 'image/jpeg', 0.92));
+      const file = new File([blob], 'scan_' + Date.now() + '.jpg', { type: 'image/jpeg' });
+      await navigator.share({ title: 'WebScanner', files: [file] });
+      this.toggleSheet('exportSheet', false);
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        this.showToast(t('error'));
       }
-      ctx.putImageData(imageData, 0, 0);
     }
-
-    if (filters.sharpness > 0) {
-      this.applySharpness(filters.sharpness);
-    }
-
-    page.currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   },
 
-  applySharpness(amount) {
-    const ctx = this.ctx;
-    const canvas = this.canvas;
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-    const w = canvas.width;
-    const h = canvas.height;
-    const factor = amount / 50;
+  async applyFilters() {
+    if (!this.state.imageLoaded) return;
+    if (this._filterPending) return;
+    this._filterPending = true;
+    try {
+      const page = this.state.pages[this.state.currentPageIndex];
+      if (!page || !page.originalImage) return;
 
-    const kernel = [0, -factor, 0, -factor, 1 + 4 * factor, -factor, 0, -factor, 0];
-    const output = new Uint8ClampedArray(data);
+      const filters = this.state.filters;
+      const canvas = this.canvas;
+      const ctx = this.ctx;
+      const img = page.originalImage;
 
-    for (let y = 1; y < h - 1; y++) {
-      for (let x = 1; x < w - 1; x++) {
-        const idx = (y * w + x) * 4;
-        for (let c = 0; c < 3; c++) {
-          let sum = 0;
-          let ki = 0;
-          for (let ky = -1; ky <= 1; ky++) {
-            for (let kx = -1; kx <= 1; kx++) {
-              const pidx = ((y + ky) * w + (x + kx)) * 4 + c;
-              sum += data[pidx] * kernel[ki++];
-            }
-          }
-          output[idx + c] = Math.min(255, Math.max(0, sum));
+      // Restore opacity if coming from Before/After
+      canvas.style.opacity = '1';
+
+      const w = this.state.canvasWidth;
+      const h = this.state.canvasHeight;
+
+      ctx.filter = [
+        `brightness(${100 + filters.brightness}%)`,
+        `contrast(${100 + filters.contrast}%)`,
+        `saturate(${100 + filters.saturation}%)`,
+        filters.grayscale ? 'grayscale(100%)' : '',
+        filters.sepia ? 'sepia(100%)' : '',
+        filters.invert ? 'invert(100%)' : '',
+      ].filter(Boolean).join(' ');
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+
+      if (filters.bw) {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+          const val = avg > filters.threshold ? 255 : 0;
+          data[i] = data[i + 1] = data[i + 2] = val;
         }
+        ctx.putImageData(imageData, 0, 0);
       }
-    }
 
-    ctx.putImageData(new ImageData(output, w, h), 0, 0);
+      if (filters.sharpness > 0) {
+        await this.applySharpness(filters.sharpness);
+      }
+
+      page.currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    } finally {
+      this._filterPending = false;
+    }
+  },
+
+  async applySharpness(amount) {
+    if (this.state.isFilterWorkerRunning) return;
+    this.state.isFilterWorkerRunning = true;
+
+    // Add progress UI
+    const progressEl = document.getElementById('filterProgress');
+    const progressFill = document.getElementById('filterProgressBar');
+    if (progressEl) progressEl.classList.remove('hidden');
+
+    const worker = new Worker('js/filter-worker.js');
+    const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+
+    return new Promise((resolve) => {
+      worker.onmessage = (e) => {
+        if (e.data.progress !== undefined) {
+          if (progressFill) progressFill.style.width = e.data.progress + '%';
+          return;
+        }
+
+        const output = new ImageData(e.data.output, this.canvas.width, this.canvas.height);
+        this.ctx.putImageData(output, 0, 0);
+        this.state.isFilterWorkerRunning = false;
+        if (progressEl) progressEl.classList.add('hidden');
+        worker.terminate();
+        resolve();
+      };
+
+      worker.postMessage({
+        data: imageData.data,
+        width: this.canvas.width,
+        height: this.canvas.height,
+        amount
+      }, [imageData.data.buffer]);
+    });
   },
 
   startManualCrop() {
@@ -839,6 +1013,7 @@ const app = {
   },
 
   confirmManualCrop() {
+    this.saveUndoState();
     const croppedCanvas = manualCrop.cropQuadrilateral();
     const canvas = this.canvas;
 
@@ -854,7 +1029,6 @@ const app = {
 
       this.state.canvasWidth = croppedCanvas.width;
       this.state.canvasHeight = croppedCanvas.height;
-      this.state.currentImageData = this.ctx.getImageData(0, 0, canvas.width, canvas.height);
       this.state.imageLoaded = true;
       this.showToast(t('cropSuccess'));
 
@@ -894,7 +1068,6 @@ const app = {
             this.setCurrentPageImage(croppedImage);
             this.state.canvasWidth = this.canvas.width;
             this.state.canvasHeight = this.canvas.height;
-            this.state.currentImageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
             this.state.imageLoaded = true;
             this.showToast(t('cropSuccess'));
             this.applyFilters();
@@ -912,6 +1085,7 @@ const app = {
 
   rotate(deg) {
     if (!this.state.imageLoaded) return;
+    this.saveUndoState();
 
     const canvas = this.canvas;
     const ctx = this.ctx;
@@ -968,6 +1142,7 @@ const app = {
 
   flip(direction) {
     if (!this.state.imageLoaded) return;
+    this.saveUndoState();
     const canvas = this.canvas;
     const ctx = this.ctx;
     const page = this.state.pages[this.state.currentPageIndex];
@@ -1045,6 +1220,16 @@ const app = {
     this.applyFilters();
   },
 
+  showOriginal() {
+    if (!this.state.imageLoaded) return;
+    const page = this.state.pages[this.state.currentPageIndex];
+    if (!page || !page.originalImage) return;
+    this.canvas.style.opacity = '0.7';
+    this.ctx.filter = 'none';
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.drawImage(page.originalImage, 0, 0, this.state.canvasWidth, this.state.canvasHeight);
+  },
+
   async showHistory() {
     const historyList = document.getElementById('historyList');
     historyList.innerHTML = '';
@@ -1085,16 +1270,28 @@ const app = {
     }
   },
 
-  showToast(message) {
+  showToast(message, type = 'info') {
     const existing = document.querySelector('.toast');
-    if (existing) existing.remove();
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'polite');
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 2000);
+    if (existing) {
+      existing.style.animation = 'toastOut 0.2s ease forwards';
+      setTimeout(() => existing.remove(), 200);
+    }
+
+    setTimeout(() => {
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.setAttribute('role', 'alert');
+      toast.setAttribute('aria-live', 'polite');
+      toast.textContent = message;
+      document.body.appendChild(toast);
+
+      // Adaptive timeout based on message length
+      const duration = Math.min(4000, Math.max(2000, message.length * 50));
+      setTimeout(() => {
+        toast.style.animation = 'toastOut 0.2s ease forwards';
+        setTimeout(() => toast.remove(), 200);
+      }, duration);
+    }, existing ? 200 : 0);
   },
 
   async autoEnhance() {
@@ -1165,7 +1362,7 @@ const app = {
       
       resultDiv.innerHTML = html;
     } catch (err) {
-      resultDiv.innerText = 'Error: ' + err.message;
+      resultDiv.innerHTML = `<div style="color: var(--color-destructive);"><strong>Error:</strong> ${this.escapeHtml(err.message)}</div>`;
     } finally {
       this.state.isAnalyzing = false;
       btn.disabled = false;
@@ -1253,6 +1450,7 @@ const app = {
   },
 
   async confirmInpaint() {
+    this.saveUndoState();
     document.getElementById('inpaintProgress').classList.remove('hidden');
     
     try {
@@ -1292,7 +1490,6 @@ const app = {
         
         this.state.canvasWidth = img.width;
         this.state.canvasHeight = img.height;
-        this.state.currentImageData = this.ctx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
         this.setCurrentPageImage(img);
         this.showToast(t('removeDone'));
       };
@@ -1312,7 +1509,243 @@ const app = {
     document.getElementById('inpaintActionBar')?.classList.add('hidden');
     this.state.isCropping = false;
     inpaint.clear();
+  },
+
+  // --- Undo/Redo ---
+  saveUndoState() {
+    const page = this.state.pages[this.state.currentPageIndex];
+    if (!page || !page.originalImage) return;
+
+    const stateSnapshot = {
+      imageData: page.originalImage.src,
+      canvasWidth: this.canvas.width,
+      canvasHeight: this.canvas.height,
+      filters: JSON.parse(JSON.stringify(this.state.filters))
+    };
+
+    this.state.undoStack.push(stateSnapshot);
+    if (this.state.undoStack.length > this.state.maxUndoSteps) {
+      this.state.undoStack.shift(); // Remove oldest
+    }
+    this.state.redoStack = []; // Clear redo on new action
+    this.updateUndoRedoUI();
+  },
+
+  async undo() {
+    if (this.state.undoStack.length === 0) return;
+
+    const page = this.state.pages[this.state.currentPageIndex];
+    if (!page) return;
+
+    // Save current state to redo stack
+    const currentState = {
+      imageData: page.originalImage.src,
+      canvasWidth: this.canvas.width,
+      canvasHeight: this.canvas.height,
+      filters: JSON.parse(JSON.stringify(this.state.filters))
+    };
+    this.state.redoStack.push(currentState);
+
+    // Restore previous state
+    const prevState = this.state.undoStack.pop();
+    await this.restoreState(prevState);
+    this.updateUndoRedoUI();
+  },
+
+  async redo() {
+    if (this.state.redoStack.length === 0) return;
+
+    const page = this.state.pages[this.state.currentPageIndex];
+    if (!page) return;
+
+    // Save current state to undo stack
+    const currentState = {
+      imageData: page.originalImage.src,
+      canvasWidth: this.canvas.width,
+      canvasHeight: this.canvas.height,
+      filters: JSON.parse(JSON.stringify(this.state.filters))
+    };
+    this.state.undoStack.push(currentState);
+
+    // Restore next state
+    const nextState = this.state.redoStack.pop();
+    await this.restoreState(nextState);
+    this.updateUndoRedoUI();
+  },
+
+  async restoreState(state) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const page = this.state.pages[this.state.currentPageIndex];
+        if (page) {
+          page.originalImage = img;
+          page.currentImageData = null;
+        }
+
+        this.canvas.width = state.canvasWidth;
+        this.canvas.height = state.canvasHeight;
+        this.ctx.drawImage(img, 0, 0);
+
+        this.state.filters = state.filters;
+        this.state.canvasWidth = img.naturalWidth;
+        this.state.canvasHeight = img.naturalHeight;
+        this.state.imageLoaded = true;
+
+        // Update filter UI
+        this.updateFilterUI();
+        this.resetZoom();
+        resolve();
+      };
+      img.src = state.imageData;
+    });
+  },
+
+  updateFilterUI() {
+    const f = this.state.filters;
+    const updates = [
+      ['filterBrightness', f.brightness, 'brightnessVal'],
+      ['filterContrast', f.contrast, 'contrastVal'],
+      ['filterSaturation', f.saturation, 'saturationVal'],
+      ['filterSharpness', f.sharpness, 'sharpnessVal'],
+      ['filterThreshold', f.threshold, 'thresholdVal']
+    ];
+    updates.forEach(([id, val, valId]) => {
+      const el = document.getElementById(id);
+      if (el) el.value = val;
+      const valEl = document.getElementById(valId);
+      if (valEl) valEl.textContent = val;
+    });
+    document.getElementById('filterGrayscale').checked = f.grayscale;
+    document.getElementById('filterSepia').checked = f.sepia;
+    document.getElementById('filterInvert').checked = f.invert;
+    document.getElementById('filterBW').checked = f.bw;
+    document.getElementById('thresholdGroup').classList.toggle('hidden', !f.bw);
+  },
+
+  updateUndoRedoUI() {
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    if (undoBtn) undoBtn.disabled = this.state.undoStack.length === 0;
+    if (redoBtn) redoBtn.disabled = this.state.redoStack.length === 0;
+  },
+
+  // --- PDF Preview ---
+  showPdfPreview() {
+    if (this.state.pages.length === 0) return;
+
+    const modal = document.getElementById('pdfPreviewModal');
+    const backdrop = document.getElementById('pdfPreviewBackdrop');
+    const previewCanvas = document.getElementById('pdfPreviewCanvas');
+    const ctx = previewCanvas.getContext('2d');
+
+    this._pdfPreviewIndex = 0;
+    this._pdfPreviewCanvases = this.renderAllPagesForPdf();
+
+    // Show first page
+    this.updatePdfPreview();
+
+    // Navigation
+    document.getElementById('pdfPrevPage').onclick = () => {
+      if (this._pdfPreviewIndex > 0) {
+        this._pdfPreviewIndex--;
+        this.updatePdfPreview();
+      }
+    };
+    document.getElementById('pdfNextPage').onclick = () => {
+      if (this._pdfPreviewIndex < this._pdfPreviewCanvases.length - 1) {
+        this._pdfPreviewIndex++;
+        this.updatePdfPreview();
+      }
+    };
+
+    // Close
+    document.getElementById('closePdfPreview').onclick = () => {
+      modal.classList.add('hidden');
+      modal.setAttribute('inert', '');
+    };
+    backdrop.onclick = () => {
+      modal.classList.add('hidden');
+      modal.setAttribute('inert', '');
+    };
+
+    // Confirm export
+    document.getElementById('confirmPdfExport').onclick = () => {
+      modal.classList.add('hidden');
+      modal.setAttribute('inert', '');
+      const qualitySlider = document.getElementById('exportQuality');
+      const quality = qualitySlider ? parseInt(qualitySlider.value) / 100 : 0.85;
+      pdfExport.exportToPdf(this._pdfPreviewCanvases, quality).then(() => {
+        this.showToast(t('saved'));
+        storage.saveScan(this.canvas, 'multi_scan_' + Date.now()).catch(console.warn);
+      });
+    };
+
+    modal.classList.remove('hidden');
+    modal.removeAttribute('inert');
+    lucide.createIcons({ root: modal });
+  },
+
+  updatePdfPreview() {
+    const previewCanvas = document.getElementById('pdfPreviewCanvas');
+    const ctx = previewCanvas.getContext('2d');
+    const currentCanvas = this._pdfPreviewCanvases[this._pdfPreviewIndex];
+
+    previewCanvas.width = currentCanvas.width;
+    previewCanvas.height = currentCanvas.height;
+    ctx.drawImage(currentCanvas, 0, 0);
+
+    // Update page info
+    document.getElementById('pdfPreviewPageInfo').textContent =
+      `${this._pdfPreviewIndex + 1}/${this._pdfPreviewCanvases.length}`;
+
+    // Update buttons
+    document.getElementById('pdfPrevPage').disabled = this._pdfPreviewIndex === 0;
+    document.getElementById('pdfNextPage').disabled =
+      this._pdfPreviewIndex === this._pdfPreviewCanvases.length - 1;
+
+    // Estimate size (rough JPEG estimate)
+    const estimatedSize = Math.round(currentCanvas.width * currentCanvas.height * 0.15);
+    const sizeText = estimatedSize > 1024 * 1024
+      ? `~${(estimatedSize / (1024 * 1024)).toFixed(1)} MB`
+      : `~${Math.round(estimatedSize / 1024)} KB`;
+    document.getElementById('pdfPreviewSize').textContent = sizeText;
+  },
+
+  renderAllPagesForPdf() {
+    const filters = this.state.filters;
+    return this.state.pages.map(page => {
+      const img = page.originalImage;
+      const tempCanvas = document.createElement('canvas');
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      tempCanvas.width = w;
+      tempCanvas.height = h;
+      const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+      tempCtx.filter = [
+        `brightness(${100 + filters.brightness}%)`,
+        `contrast(${100 + filters.contrast}%)`,
+        `saturate(${100 + filters.saturation}%)`,
+        filters.grayscale ? 'grayscale(100%)' : '',
+        filters.sepia ? 'sepia(100%)' : '',
+        filters.invert ? 'invert(100%)' : '',
+      ].filter(Boolean).join(' ');
+      tempCtx.drawImage(img, 0, 0, w, h);
+
+      if (filters.bw) {
+        const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+          const val = avg > filters.threshold ? 255 : 0;
+          data[i] = data[i + 1] = data[i + 2] = val;
+        }
+        tempCtx.putImageData(imageData, 0, 0);
+      }
+      return tempCanvas;
+    });
   }
 };
 
+window.app = app;
 window.addEventListener('DOMContentLoaded', () => app.init());

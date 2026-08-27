@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/dark-mode.css">
   <link rel="manifest" href="manifest.json">
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide@0.460.0"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" async></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" async></script>
 </head>
@@ -25,6 +25,12 @@
         </div>
       </div>
         <div class="header-right">
+          <button id="undoBtn" class="icon-btn" title="Undo" disabled>
+            <i data-lucide="undo-2" aria-hidden="true"></i>
+          </button>
+          <button id="redoBtn" class="icon-btn" title="Redo" disabled>
+            <i data-lucide="redo-2" aria-hidden="true"></i>
+          </button>
           <label for="langSwitcher" class="visually-hidden">Language</label>
           <select id="langSwitcher" class="lang-select">
             <option value="id">ID Indonesia</option>
@@ -104,6 +110,15 @@
             </div>
 
             <div id="cropActionBar" class="crop-action-bar hidden">
+              <div class="crop-presets">
+                <button class="crop-preset-btn active" data-ratio="free" data-i18n="cropFree">Bebas</button>
+                <button class="crop-preset-btn" data-ratio="1:1">1:1</button>
+                <button class="crop-preset-btn" data-ratio="3:4">3:4</button>
+                <button class="crop-preset-btn" data-ratio="a4" data-i18n="cropA4">A4</button>
+              </div>
+              <button id="cropRotateBtn" class="crop-action-btn crop-rotate" aria-label="Rotate">
+                <i data-lucide="rotate-cw" aria-hidden="true"></i>
+              </button>
               <button id="cancelCropBtn" class="crop-action-btn crop-cancel" aria-label="Cancel">
                 <i data-lucide="x" aria-hidden="true"></i>
               </button>
@@ -309,10 +324,49 @@
           </button>
         </div>
         <div class="filter-divider"></div>
+        <button id="compareFilterBtn" class="btn btn-secondary" style="margin-bottom: 8px;">
+          <i data-lucide="eye" aria-hidden="true"></i>
+          <span data-i18n="beforeAfter">Sebelum/Sesudah</span>
+        </button>
+        <div id="filterProgress" class="ocr-progress hidden" style="margin-bottom: 8px;">
+          <div class="ocr-progress-bar"><div id="filterProgressBar" class="ocr-progress-fill"></div></div>
+        </div>
         <button id="resetFilterBtn" class="btn btn-danger">
           <i data-lucide="rotate-ccw" aria-hidden="true"></i>
           <span data-i18n="resetFilter">Reset Filter</span>
         </button>
+      </div>
+    </div>
+
+    <!-- PDF Preview Modal -->
+    <div id="pdfPreviewModal" class="pdf-preview-modal hidden" role="dialog" aria-modal="true" aria-label="PDF Preview" inert>
+      <div class="pdf-preview-backdrop" id="pdfPreviewBackdrop"></div>
+      <div class="pdf-preview-content">
+        <div class="pdf-preview-header">
+          <h3 data-i18n="pdfPreview">Pratinjau PDF</h3>
+          <span id="pdfPreviewPageInfo" class="pdf-page-info">1/1</span>
+          <button id="closePdfPreview" class="icon-btn" aria-label="Close">
+            <i data-lucide="x" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="pdf-preview-body">
+          <canvas id="pdfPreviewCanvas"></canvas>
+        </div>
+        <div class="pdf-preview-footer">
+          <span id="pdfPreviewSize" class="pdf-size-info">~0 KB</span>
+          <div class="pdf-preview-nav">
+            <button id="pdfPrevPage" class="icon-btn" disabled>
+              <i data-lucide="chevron-left" aria-hidden="true"></i>
+            </button>
+            <button id="pdfNextPage" class="icon-btn" disabled>
+              <i data-lucide="chevron-right" aria-hidden="true"></i>
+            </button>
+          </div>
+          <button id="confirmPdfExport" class="btn btn-primary">
+            <i data-lucide="download" aria-hidden="true"></i>
+            <span data-i18n="exportPdf">PDF</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -360,6 +414,12 @@
         </button>
       </div>
       <div class="sheet-body">
+        <div class="filter-group">
+          <label for="exportQuality" data-i18n="compressionQuality">Kualitas Kompresi</label>
+          <input type="range" id="exportQuality" min="10" max="100" value="85" class="filter-slider">
+          <span id="exportQualityVal" class="filter-val">85%</span>
+        </div>
+        <div class="filter-divider"></div>
         <button class="export-btn" data-format="pdf">
           <i data-lucide="file-text" aria-hidden="true"></i>
           <div>
@@ -379,6 +439,27 @@
           <div>
             <strong data-i18n="exportJpg">JPG</strong>
             <small data-i18n="exportJpgDesc">Ukuran file lebih kecil</small>
+          </div>
+        </button>
+        <button class="export-btn" data-format="batchPdf">
+          <i data-lucide="files" aria-hidden="true"></i>
+          <div>
+            <strong data-i18n="exportBatchPdf">Semua Halaman (PDF)</strong>
+            <small data-i18n="exportBatchPdfDesc">Simpan semua halaman sebagai PDF</small>
+          </div>
+        </button>
+        <button class="export-btn" data-format="batchJpg">
+          <i data-lucide="images" aria-hidden="true"></i>
+          <div>
+            <strong data-i18n="exportBatchJpg">Semua Halaman (JPG)</strong>
+            <small data-i18n="exportBatchJpgDesc">Simpan semua gambar</small>
+          </div>
+        </button>
+        <button class="export-btn" id="shareBtn">
+          <i data-lucide="share-2" aria-hidden="true"></i>
+          <div>
+            <strong data-i18n="share">Share</strong>
+            <small data-i18n="shareDesc">Bagikan dokumen</small>
           </div>
         </button>
       </div>

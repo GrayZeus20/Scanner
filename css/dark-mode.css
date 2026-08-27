@@ -11,6 +11,8 @@
   --color-accent-light: rgba(37, 99, 235, 0.15);
   --color-primary: #334155;
   --color-on-primary: #F8FAFC;
+  --color-success: #4ADE80;
+  --color-warning: #FBBF24;
 }
 
 .dark-mode #header {
@@ -24,13 +26,13 @@
 }
 
 .dark-mode .sheet-panel {
-  background: var(--color-surface);
-  border-color: var(--color-border);
-  border-left-color: var(--color-border);
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(51, 65, 85, 0.5);
+  border-left-color: rgba(51, 65, 85, 0.5);
 }
 
 .dark-mode .canvas-wrapper {
-  background: #0A0F1A;
+  background: var(--color-bg);
 }
 
 .dark-mode #mainCanvas {
@@ -97,19 +99,19 @@
 }
 
 .dark-mode .ocr-result {
-  background: #0F172A;
+  background: var(--color-bg);
   border-color: var(--color-border);
   color: var(--color-text);
 }
 
 .dark-mode #aiResultArea {
-  background: #0F172A;
+  background: var(--color-bg);
   border-color: var(--color-border);
   border-left-color: var(--color-accent);
 }
 
 .dark-mode .api-key-input {
-  background: #0F172A;
+  background: var(--color-bg);
   border-color: var(--color-border);
   color: var(--color-text);
 }
@@ -155,6 +157,27 @@
 
 @media (min-width: 1024px) {
   .dark-mode body {
-    background: #0A0F1A;
+    background: var(--color-bg);
   }
+}
+
+.dark-mode .sheet-backdrop {
+  background: rgba(2, 6, 23, 0.6);
+}
+
+.dark-mode .crop-presets {
+  background: rgba(30, 41, 59, 0.7);
+}
+
+.dark-mode .crop-preset-btn {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.dark-mode .crop-preset-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.dark-mode .mask-canvas {
+  opacity: 0.6;
 }

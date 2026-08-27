@@ -6,6 +6,13 @@ const manualCrop = {
   canvas: null,
   handleOffset: 22, // 44px handle / 2 = 22px offset untuk center
 
+  // Aspect ratio presets: null = free, number = w/h ratio
+  RATIO_MAP: { free: null, '1:1': 1, '3:4': 3 / 4, a4: 210 / 297 },
+  lockedRatio: null,
+
+  // Rotation state
+  _rotation: 0,
+
   state: {
     resizing: false,
     activeCorner: null,
@@ -19,6 +26,7 @@ const manualCrop = {
   _cache: { canvasRect: null, wrapperRect: null, areaLeft: 0, areaTop: 0 },
 
   _updateCache() {
+    if (!this.canvas || !this.wrapper || !this.area) return;
     this._cache.canvasRect = this.canvas.getBoundingClientRect();
     this._cache.wrapperRect = this.wrapper.getBoundingClientRect();
     this._cache.areaLeft = parseFloat(this.area.style.left) || 0;
@@ -44,6 +52,18 @@ const manualCrop = {
     document.addEventListener('touchmove', (e) => this.onMove(e), { passive: false });
     document.addEventListener('mouseup', () => this.onEnd());
     document.addEventListener('touchend', () => this.onEnd());
+
+    // Rotation button in action bar
+    const rotateBtn = document.getElementById('cropRotateBtn');
+    if (rotateBtn) {
+      rotateBtn.addEventListener('click', () => this.rotateStep());
+    }
+  },
+
+  rotateStep() {
+    this._rotation = (this._rotation + 15) % 360;
+    if (this._rotation > 180) this._rotation -= 360;
+    this.area.style.transform = `rotate(${this._rotation}deg)`;
   },
 
   onCornerStart(e) {
@@ -61,11 +81,14 @@ const manualCrop = {
 
   onMove(e) {
     if (!this.state.resizing) return;
+    if (!this._cache.canvasRect) this._updateCache();
+    if (!this._cache.canvasRect) return; // Still null
+
     e.preventDefault();
     const pos = this.getPos(e);
 
-    const cr = this._cache.canvasRect;
-    const wr = this._cache.wrapperRect;
+    const cr = this._cache.canvasRect || this.canvas.getBoundingClientRect();
+    const wr = this._cache.wrapperRect || this.wrapper.getBoundingClientRect();
 
     const dx = pos.x - this.state.startX;
     const dy = pos.y - this.state.startY;
@@ -74,16 +97,42 @@ const manualCrop = {
     const init = this.state.initialCorners[key];
     const corner = this.state.corners[key];
 
-    const nextX = init.x + dx;
-    const nextY = init.y + dy;
-
     const minBoundX = cr.left - wr.left;
     const minBoundY = cr.top - wr.top;
     const maxBoundX = cr.right - wr.left;
     const maxBoundY = cr.bottom - wr.top;
 
-    corner.x = Math.max(minBoundX, Math.min(nextX, maxBoundX));
-    corner.y = Math.max(minBoundY, Math.min(nextY, maxBoundY));
+    let nextX = init.x + dx;
+    let nextY = init.y + dy;
+
+    // Constrain to canvas bounds
+    nextX = Math.max(minBoundX, Math.min(nextX, maxBoundX));
+    nextY = Math.max(minBoundY, Math.min(nextY, maxBoundY));
+
+    // Apply aspect ratio constraint: keep opposite corner fixed
+    if (this.lockedRatio) {
+      const opposites = { tl: 'br', tr: 'bl', bl: 'tr', br: 'tl' };
+      const opp = this.state.corners[opposites[key]];
+      const ratio = this.lockedRatio; // width / height
+
+      const dx2 = nextX - opp.x;
+      const dy2 = nextY - opp.y;
+      const absDx = Math.abs(dx2);
+      const absDy = Math.abs(dy2);
+
+      if (absDx / ratio > absDy) {
+        // Width is dominant — derive H from W
+        const newH = absDx / ratio;
+        nextY = opp.y + Math.sign(dy2 || 1) * newH;
+      } else {
+        // Height is dominant — derive W from H
+        const newW = absDy * ratio;
+        nextX = opp.x + Math.sign(dx2 || 1) * newW;
+      }
+    }
+
+    corner.x = nextX;
+    corner.y = nextY;
 
     this.updateMagnifier(pos);
     this.renderQuadrilateral();
@@ -91,8 +140,8 @@ const manualCrop = {
 
   updateMagnifier(pos) {
     if (!this.magnifier) return;
-    const cr = this._cache.canvasRect;
-    const wr = this._cache.wrapperRect;
+    const cr = this._cache.canvasRect || this.canvas.getBoundingClientRect();
+    const wr = this._cache.wrapperRect || this.wrapper.getBoundingClientRect();
     const scaleX = this.canvas.width / cr.width;
     const scaleY = this.canvas.height / cr.height;
 
@@ -154,6 +203,13 @@ const manualCrop = {
     });
   },
 
+  setRatio(ratioKey) {
+    this.lockedRatio = this.RATIO_MAP[ratioKey] ?? null;
+    if (this.lockedRatio && this.canvas) {
+      this.resetCropArea();
+    }
+  },
+
   resetCropArea() {
     if (!this.canvas || !this.wrapper || !this.area) return;
 
@@ -161,26 +217,46 @@ const manualCrop = {
       app.resetZoom();
     }
 
-    // Hitung semua posisi dalam satu batch
     const canvasRect = this.canvas.getBoundingClientRect();
     const wrapperRect = this.wrapper.getBoundingClientRect();
 
     const cx = canvasRect.left - wrapperRect.left;
     const cy = canvasRect.top - wrapperRect.top;
-    const cw = canvasRect.width;
-    const ch = canvasRect.height;
+    let cw = canvasRect.width;
+    let ch = canvasRect.height;
 
-    this.area.style.left = cx + 'px';
-    this.area.style.top = cy + 'px';
+    // Apply aspect ratio constraint to initial crop area
+    if (this.lockedRatio) {
+      if (cw / ch > this.lockedRatio) {
+        cw = ch * this.lockedRatio;
+      } else {
+        ch = cw / this.lockedRatio;
+      }
+      // Center the crop area
+      const offsetX = (canvasRect.width - cw) / 2;
+      const offsetY = (canvasRect.height - ch) / 2;
+      this.area.style.left = (cx + offsetX) + 'px';
+      this.area.style.top = (cy + offsetY) + 'px';
+    } else {
+      this.area.style.left = cx + 'px';
+      this.area.style.top = cy + 'px';
+    }
+
     this.area.style.width = cw + 'px';
     this.area.style.height = ch + 'px';
     this.area.style.clipPath = '';
+    this.area.style.transform = '';
+    this._rotation = 0;
+
+    // Read actual position (may differ when ratio-constrained)
+    const aL = parseFloat(this.area.style.left) || cx;
+    const aT = parseFloat(this.area.style.top) || cy;
 
     this.state.corners = {
-      tl: { x: cx, y: cy },
-      tr: { x: cx + cw, y: cy },
-      bl: { x: cx, y: cy + ch },
-      br: { x: cx + cw, y: cy + ch }
+      tl: { x: aL, y: aT },
+      tr: { x: aL + cw, y: aT },
+      bl: { x: aL, y: aT + ch },
+      br: { x: aL + cw, y: aT + ch }
     };
 
     // Cache setelah area di-posisi
@@ -218,6 +294,30 @@ const manualCrop = {
 
     if (w < 10 || h < 10) return null;
 
+    // Apply rotation if non-zero
+    if (Math.abs(this._rotation) > 0.5) {
+      const radians = (this._rotation * Math.PI) / 180;
+      const cos = Math.abs(Math.cos(radians));
+      const sin = Math.abs(Math.sin(radians));
+      const rotW = Math.ceil(w * cos + h * sin);
+      const rotH = Math.ceil(w * sin + h * cos);
+
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = w;
+      tempCanvas.height = h;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(srcCanvas, minX, minY, w, h, 0, 0, w, h);
+
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = rotW;
+      outCanvas.height = rotH;
+      const outCtx = outCanvas.getContext('2d');
+      outCtx.translate(rotW / 2, rotH / 2);
+      outCtx.rotate(radians);
+      outCtx.drawImage(tempCanvas, -w / 2, -h / 2);
+      return outCanvas;
+    }
+
     const imageData = srcCtx.getImageData(minX, minY, w, h);
     const outCanvas = document.createElement('canvas');
     outCanvas.width = w;
@@ -227,3 +327,5 @@ const manualCrop = {
     return outCanvas;
   }
 };
+
+window.manualCrop = manualCrop;

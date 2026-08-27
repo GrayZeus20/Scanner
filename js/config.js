@@ -11,7 +11,8 @@ const config = {
   },
   OCR: {
     timeout: 60000,
-    lang: 'ind+eng'
+    lang: 'ind',
+    langs: ['ind', 'eng']
   },
   AI: {
     timeout: 15000,

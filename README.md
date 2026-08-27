@@ -1,112 +1,226 @@
-# WebScanner
+# 🚀 Scanner
 
-Aplikasi web scanner dokumen berbasis PWA dengan fitur kamera langsung, unggah file, dan konversi ke gambar/PDF. Mendukung penyimpanan lokal-only via IndexedDB.
+**[EN]** Scanner project
 
-## Fitur Utama
+**[ID]** Scanner project
 
-### Kamera & Pemindaian
-- **3 Mode Flash**: Off, Auto (menyala sesaat saat capture), dan On (senter terus-menerus)
-- **Switch Kamera**: Beralih antara kamera depan dan belakang dengan satu ketukan
-- **Tap-to-Focus**: Ketuk di mana saja pada layar kamera untuk mengatur fokus
-- **Frame Guide**: Panduan bingkai 3:4 untuk penyejajaran dokumen
+---
 
-### Editor Gambar
-- **Manual Crop**: Pemotongan manual dengan 4 titik sudut dan kaca pembesar (magnifier)
-- **Filter**: Kecerahan, Kontras, Saturasi, Ketajaman, Abu-abu, Sepia, Invert, dan Hitam-Putih (B&W)
-- **Rotasi & Balik**: Putar kiri/kanan dan balik horizontal/vertikal
-- **Zoom & Pan**: Kontrol zoom dengan scroll wheel atau pinch, serta navigasi gambar
+[![Stack](https://img.shields.io/badge/Node.js-2024-blue?logo=node.js)]()
+[![Framework](https://img.shields.io/badge/Framework-Node.js-purple)]()
+[![License](https://img.shields.io/badge/License-MIT-green)]()
+[![CI](https://img.shields.io/badge/CI Pipeline-Passing-brightgreen)]()
 
-### AI & OCR
-- **OCR (Tesseract.js)**: Ekstrak teks dari gambar dokumen
-- **Analisis AI (Gemini via Proxy)**: Identifikasi jenis dokumen, ekstrak data terstruktur (faktur, identitas, surat)
-- **Hapus Objek AI (Inpaint)**: Hapus objek yang tidak diinginkan menggunakan AI
 
-### Ekspor & Penyimpanan
-- **PDF**: Simpan dokumen sebagai file PDF multi-halaman
-- **PNG/JPG**: Ekspor gambar dalam format standar
-- **Multi-Halaman**: Dukungan pemindaian multi-halaman dengan navigasi thumbnail
-- **Riwayat**: Penyimpanan otomatis ke IndexedDB dengan pratinjau
+---
 
-### PWA & Aksesibilitas
-- **Offline-First**: Bekerja tanpa koneksi internet setelah pertama kali dimuat
-- **Dark Mode**: Mode gelap otomatis mengikuti pengaturan sistem
-- **Multi-Bahasa**: Dukungan Bahasa Indonesia dan English
-- **Responsif**: Tampilan optimal di perangkat mobile, tablet, dan desktop
+## ✨ Features / Fitur
 
-## Struktur Proyek
+> **[EN]** Key features of this project.
 
+> **[ID]** Fitur utama dari project ini.
+
+<!-- Add your features here: -->
+- Feature 1
+- Feature 2
+
+---
+
+## 🏗️ Architecture / Arsitektur
+
+**[EN]** Project structure overview.
+
+**[ID]** Ikhtisar struktur project.
+
+``
+.github/
+  workflows/
+css/
+  dark-mode.css
+  style.css
+docs/
+  adr/
+icons/
+  icon.svg
+js/
+  ai.js
+  app.js
+  camera.js
+  config.js
+  edge-detection.js
+libs/
+test-results/
+  .last-run.json
+tests/
+  app.spec.js
+worker/
+  .wrangler/
+  index.js
+  wrangler.toml
+AGENTS.md
+index.html
+manifest.json
+package-lock.json
+package.json
+playwright.config.ts
+README.md
+sw.js
+``
+
+```mermaid
+flowchart TD
+    A[Root] --> B1[src]
+    B3[.github]
+    B4[workflows]
+    B5[css]
+    B6[dark-mode.css]
+    B7[style.css]
+    B8[docs]
+    B9[adr]
+    B10[icons]
+    B11[icon.svg]
+    B12[js]
+    B13[ai.js]
+    B14[app.js]
+    B15[camera.js]
+    B16[libs]
+    B17[test-results]
+    B18[.last-run.json]
+    B19[tests]
+    B20[app.spec.js]
 ```
-Scanner/
-├── index.html          # Halaman utama
-├── manifest.json       # PWA manifest
-├── sw.js              # Service Worker
-├── css/
-│   ├── style.css      # Gaya utama (Exaggerated Minimalism)
-│   └── dark-mode.css  # Gaya dark mode
-├── js/
-│   ├── app.js         # Logika aplikasi utama
-│   ├── camera.js      # Modul kamera dan capture
-│   ├── manual-crop.js # Modul pemotongan manual
-│   ├── inpaint.js     # Modul hapus objek AI
-│   ├── ocr.js         # Modul OCR Tesseract
-│   ├── ai.js          # Modul analisis AI Gemini
-│   ├── i18n.js        # Dukungan multi-bahasa
-│   ├── storage.js     # Penyimpanan IndexedDB
-│   ├── pdf-export.js  # Ekspor PDF
-│   └── edge-detection.js # Deteksi tepi otomatis
-├── tests/
-│   └── app.spec.js    # Pengujian Playwright
-└── worker/            # Cloudflare Worker untuk proxy AI
-```
 
-## Instalasi & Pengembangan
+---
 
-### Prasyarat
-- Node.js 18+
-- Browser modern (Chrome, Firefox, Safari, Edge)
+## 🛠️ Tech Stack
 
-### Menjalankan Aplikasi
+
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+* [![Git](https://img.shields.io/badge/Git-2.x-orange?logo=git)](https://git-scm.com/)
+* [![Node.js](https://img.shields.io/badge/Node.js-20.x-green?logo=node.js)](https://nodejs.org/)
+
+
+### Installation / Instalasi
+
 ```bash
-# Install dependencies untuk pengujian
+# Clone
+git clone https://github.com/GrayZeus20/Scanner.git
+cd Scanner
+
+# Install dependencies / Install dependensi
 npm install
-
-# Jalankan server lokal
-npx serve -l 3000 -s
-
-# Buka http://localhost:3000
 ```
 
-### Menjalankan Pengujian
+### Development / Pengembangan
+
 ```bash
-# Install Playwright
-npx playwright install chromium
-
-# Jalankan semua test
-npx playwright test
-
-# Jalankan dengan UI
-npx playwright test --headed
+# Start dev server / Jalankan server development
+npm start
 ```
 
-## Teknologi yang Digunakan
+### Build
 
-- **Frontend**: Vanilla JavaScript (tanpa framework)
-- **Rendering**: Canvas API untuk manipulasi gambar
-- **OCR**: Tesseract.js v5
-- **AI**: Google Gemini via Cloudflare Worker Proxy
-- **Penyimpanan**: IndexedDB via custom wrapper
-- **PDF**: jsPDF
-- **Ikon**: Lucide Icons
-- **Font**: Plus Jakarta Sans
-- **Pengujian**: Playwright Test
+```bash
+# No build step
+```
 
-## Standar Kode
+### Testing / Pengujian
 
-- Ikon: Gunakan SVG Lucide, bukan emoji
-- Aksesibilitas: Kontras warna 4.5:1, label untuk ikon, navigasi keyboard
-- Performa: Lazy loading gambar, virtualisasi daftar panjang
-- Keamanan: API Key tersimpan lokal, tidak ada data dikirim ke server pihak ketiga selain AI proxy
+```bash
+# Add test script
+```
 
-## Lisensi
+---
 
-Proyek untuk keperluan akademik/pembelajaran.
+## ⚙️ Configuration / Konfigurasi
+
+**[EN]**
+Copy .env.example to .env and fill in your configuration:
+
+
+**[ID]**
+Salin .env.example menjadi .env dan isi konfigurasi Anda:
+
+
+```bash
+cp .env.example .env
+
+```
+
+---
+
+## 📜 Available Commands / Perintah Tersedia
+
+| Script | Command |
+|--------|---------|
+| `IsReadOnly` | `False` |
+| `IsFixedSize` | `False` |
+| `IsSynchronized` | `False` |
+| `Keys` | `test` |
+| `Values` | `npx playwright test` |
+| `SyncRoot` | `System.Collections.Hashtable` |
+| `Count` | `1` |
+
+
+---
+
+## 📚 Documentation / Dokumentasi
+
+- [0001 ui design](docs/adr/0001-ui-design.md)
+- [0002 camera flash](docs/adr/0002-camera-flash.md)
+- [0003 ai proxy](docs/adr/0003-ai-proxy.md)
+
+---
+
+## 🕒 Recent Changes / Perubahan Terbaru
+
+* feat: refactor configuration management by introducing config.js for centralized settings; update various modules to use config values
+* feat: optimize manual crop functionality by implementing caching for bounding rectangles and improving delta calculations for corner positioning
+* feat: enhance manual crop functionality by improving crop handle styles and adding active scaling effect; update resetCropArea to reset zoom and pan
+* feat: enhance cloud analysis by improving error handling and refining prompt logic; update OCR result validation
+* feat: enhance manual crop functionality by implementing absolute corner positioning and delta calculations
+* feat: add Playwright test framework and configuration
+* feat: add remove button and drag-and-drop functionality for page thumbnails; enhance error handling in AI processing
+* feat: improve accessibility by adding labels for language switcher and filter controls
+
+---
+
+## 🛡️ Security / Keamanan
+
+**[EN]**
+* API keys and secrets are never committed to Git.
+* All .env files are git-ignored.
+* Only .env.example with placeholder values is tracked.
+
+**[ID]**
+* API key dan rahasia tidak pernah di-commit ke Git.
+* Semua file .env di-gitignore.
+* Hanya .env.example dengan nilai placeholder yang di-track.
+
+---
+
+## 🤝 Contributing / Kontribusi
+
+1. Fork this repository
+2. Create a feature branch (git checkout -b feature/amazing-feature)
+3. Commit your changes (git commit -m 'Add amazing feature')
+4. Push to the branch (git push origin feature/amazing-feature)
+5. Open a Pull Request
+
+---
+
+## 👤 Author / Pengembang
+
+Dandi January
+
+---
+
+## 📄 License / Lisensi
+
+MIT © 2026

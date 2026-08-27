@@ -1,10 +1,15 @@
 const camera = {
   stream: null,
-  video: document.getElementById('video'),
+  _video: null,
   captureHandlerBound: false,
   capturedCount: 0,
   flashMode: 'off', // 'off' | 'auto' | 'on'
   facingMode: 'environment',
+
+  get video() {
+    if (!this._video) this._video = document.getElementById('video');
+    return this._video;
+  },
 
   bindCaptureHandler() {
     if (this.captureHandlerBound) return;
@@ -62,6 +67,7 @@ const camera = {
         } else {
           const timer = setTimeout(() => {
             this.video.removeEventListener('loadedmetadata', handler);
+            this.stop();
             reject(new Error('Timeout waiting for metadata'));
           }, 5000);
 
@@ -272,7 +278,7 @@ const camera = {
       flashBtn.setAttribute('aria-label', t('flashOff'));
     } else if (this.flashMode === 'auto') {
       flashBtn.innerHTML = '<i data-lucide="zap" aria-hidden="true"></i><span class="flash-label">A</span>';
-      flashBtn.setAttribute('aria-label', 'Flash Auto');
+      flashBtn.setAttribute('aria-label', t('flashAuto'));
     } else {
       flashBtn.innerHTML = '<i data-lucide="zap" aria-hidden="true"></i>';
       flashBtn.setAttribute('aria-label', t('flashOn'));

@@ -6,6 +6,23 @@
     "test": "npx playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.61.1"
-  }
+    "@playwright/test": "^1.62.1",
+    "canvas": "^3.2.3"
+  },
+  "description": "**[EN]** Scanner project",
+  "main": "sw.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GrayZeus20/Scanner.git"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/GrayZeus20/Scanner/issues"
+  },
+  "homepage": "https://github.com/GrayZeus20/Scanner#readme"
 }

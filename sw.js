@@ -1,9 +1,10 @@
-const CACHE_NAME = 'webscanner-v4';
+const CACHE_NAME = 'webscanner-v8';
 const BASE_PATH = self.location.pathname.replace(/\/sw\.js$/, '/').replace(/\/[^\/]*$/, '/');
 const ASSETS = [
   'index.html',
   'css/style.css',
   'css/dark-mode.css',
+  'js/config.js',
   'js/i18n.js',
   'js/camera.js',
   'js/edge-detection.js',
@@ -11,10 +12,12 @@ const ASSETS = [
   'js/pdf-export.js',
   'js/storage.js',
   'js/ocr.js',
+  'js/inpaint.js',
   'js/ai.js',
   'js/app.js',
+  'js/filter-worker.js',
   'manifest.json',
-  'https://unpkg.com/lucide@latest',
+  'https://unpkg.com/lucide@0.460.0',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
   'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'
 ];
