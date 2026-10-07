@@ -1,5 +1,5 @@
 const config = {
-  IMAGE_MAX_SIZE: 2000,
+  IMAGE_MAX_SIZE: 3000,
   AUTO_ENHANCE: {
     sharpness: 30,
     contrast: 20
@@ -14,9 +14,10 @@ const config = {
     lang: 'ind',
     langs: ['ind', 'eng']
   },
-  AI: {
-    timeout: 15000,
-    workerUrl: 'https://scanner-ai-proxy.ace-suka-main-game.workers.dev'
+  ML: {
+    cnnModel: 'mobilenet_v2',
+    enableCnn: true,
+    localOnly: true
   },
   CAMERA: {
     metadataTimeout: 5000

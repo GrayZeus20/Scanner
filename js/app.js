@@ -133,7 +133,7 @@ const app = {
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (refreshing) return;
         refreshing = true;
-        window.location.reload();
+        this.showToast(t('newVersion'), 'info');
       });
     }
   },
@@ -247,7 +247,39 @@ const app = {
     });
     document.getElementById('closeToolsSheet').addEventListener('click', () => this.toggleSheet('toolsSheet', false));
 
-    document.getElementById('toolCropBtn').addEventListener('click', () => {
+    document.getElementById('toolCropBtn').addEventListener('click', async () => {
+      this.toggleSheet('toolsSheet', false);
+      this.showToast(t('processing'));
+
+      // Detect edges on current canvas
+      const result = window.MLDetector?.detect
+        ? await window.MLDetector.detect(this.canvas)
+        : (typeof edgeDetection !== 'undefined' ? edgeDetection.detectContour(this.canvas) : null);
+      if (result && result.confidence > 0.35) {
+        // Pre-fill manual crop with detected corners — NO resetCropArea!
+        this.showEditor();
+        this.updatePagesTray();
+
+        // Show crop overlay with detected corners
+        const overlay = document.getElementById('cropOverlay');
+        const actionBar = document.getElementById('cropActionBar');
+        overlay.classList.remove('hidden');
+        actionBar.classList.remove('hidden');
+        this.state.isCropping = true;
+
+        manualCrop.init();
+        // Delay to ensure layout is settled before positioning handles
+        requestAnimationFrame(() => {
+          manualCrop.setDetectedCorners(result.corners, this.canvas);
+          this.showToast(t('cropInstruction'));
+        });
+      } else {
+        // Fallback: just open manual crop with default
+        this.startManualCrop();
+      }
+    });
+
+    document.getElementById('toolManualCropBtn').addEventListener('click', () => {
       this.startManualCrop();
       this.toggleSheet('toolsSheet', false);
     });
@@ -262,6 +294,7 @@ const app = {
         manualCrop.setRatio(btn.dataset.ratio);
       });
     });
+
     document.getElementById('toolFilterBtn').addEventListener('click', () => {
       this.toggleSheet('filterSheet', true);
       this.toggleSheet('toolsSheet', false);
@@ -564,6 +597,7 @@ const app = {
     if (!page) return;
     page.originalImage = image;
     page.currentImageData = null;
+    this.updatePagesTray();
   },
 
   openCamera() {
@@ -583,17 +617,17 @@ const app = {
 
   loadImageFromSrc(src) {
     const img = new Image();
-    img.onload = () => {
+    img.onload = async () => {
       const page = {
         originalImage: img,
         currentImageData: null
       };
       this.state.pages.push(page);
       this.state.currentPageIndex = this.state.pages.length - 1;
-      
+
       this.showEditor();
       this.updatePagesTray();
-      
+
       try {
         this.renderPage(this.state.currentPageIndex);
         this.autoEnhance();
@@ -620,9 +654,10 @@ const app = {
       h = Math.floor(h * ratio);
     }
     
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
+    // Use 1:1 pixel ratio for consistent coordinate mapping
+    // DPR scaling causes issues with crop overlay, zoom, and filter pixel ops
+    canvas.width = w;
+    canvas.height = h;
     
     // Store logical size for calculations
     this.state.canvasWidth = w;
@@ -630,13 +665,13 @@ const app = {
     this.state.logicalWidth = w;
     this.state.logicalHeight = h;
     
-    // Reset transform and set context scale
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Reset transform to identity
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     
-    // Draw image at logical size (fills buffer proportionally)
+    // Draw image at full logical size
     ctx.drawImage(img, 0, 0, w, h);
     
-    // Let CSS handle display sizing - no explicit style width/height
+    // CSS handles responsive display sizing via max-width/max-height
     canvas.style.width = '';
     canvas.style.height = '';
     
@@ -814,43 +849,6 @@ const app = {
           this.toggleSheet('exportSheet', false);
           this.showPdfPreview();
           return;
-          const pagesCanvases = this.state.pages.map(page => {
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = canvas.width;
-            tempCanvas.height = canvas.height;
-            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-            tempCtx.filter = [
-              `brightness(${100 + this.state.filters.brightness}%)`,
-              `contrast(${100 + this.state.filters.contrast}%)`,
-              `saturate(${100 + this.state.filters.saturation}%)`,
-              this.state.filters.grayscale ? 'grayscale(100%)' : '',
-              this.state.filters.sepia ? 'sepia(100%)' : '',
-              this.state.filters.invert ? 'invert(100%)' : '',
-            ].filter(Boolean).join(' ');
-            tempCtx.drawImage(page.originalImage, 0, 0);
-            if (this.state.filters.bw) {
-              const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-              const data = imageData.data;
-              for (let i = 0; i < data.length; i += 4) {
-                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-                const val = avg > this.state.filters.threshold ? 255 : 0;
-                data[i] = data[i + 1] = data[i + 2] = val;
-              }
-              tempCtx.putImageData(imageData, 0, 0);
-            }
-            return tempCanvas;
-          });
-
-          pdfExport.exportToPdf(pagesCanvases, quality).then(() => {
-            this.showToast(t('saved'));
-            storage.saveScan(canvas, 'multi_scan_' + Date.now()).catch((err) => {
-              if (err?.name === 'QuotaExceededError') {
-                this.showToast(t('storageFull'));
-              } else {
-                console.warn(err);
-              }
-            });
-          });
         } else if (format === 'batchJpg') {
           this.state.pages.forEach((page, i) => {
             const img = page.originalImage;
@@ -934,6 +932,9 @@ const app = {
 
       ctx.clearRect(0, 0, w, h);
       ctx.drawImage(img, 0, 0, w, h);
+
+      // Reset filter after drawing so getImageData reads actual pixel values
+      ctx.filter = 'none';
 
       if (filters.bw) {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -1116,14 +1117,13 @@ const app = {
     tempCtx.rotate(radians);
     tempCtx.drawImage(img, 0, 0, srcW, srcH, -srcW / 2, -srcH / 2, srcW, srcH);
 
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = newW * dpr;
-    canvas.height = newH * dpr;
+    canvas.width = newW;
+    canvas.height = newH;
     this.state.canvasWidth = newW;
     this.state.canvasHeight = newH;
     this.state.logicalWidth = newW;
     this.state.logicalHeight = newH;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(tempCanvas, 0, 0);
     canvas.style.width = '';
     canvas.style.height = '';
@@ -1158,7 +1158,6 @@ const app = {
       h = Math.floor(h * ratio);
     }
 
-    const dpr = window.devicePixelRatio || 1;
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = w;
     tempCanvas.height = h;
@@ -1173,13 +1172,13 @@ const app = {
     }
     tempCtx.drawImage(img, 0, 0, w, h);
 
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
+    canvas.width = w;
+    canvas.height = h;
     this.state.canvasWidth = w;
     this.state.canvasHeight = h;
     this.state.logicalWidth = w;
     this.state.logicalHeight = h;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(tempCanvas, 0, 0);
     canvas.style.width = '';
     canvas.style.height = '';
@@ -1272,6 +1271,7 @@ const app = {
 
   showToast(message, type = 'info') {
     const existing = document.querySelector('.toast');
+    const delay = existing ? 200 : 0;
     if (existing) {
       existing.style.animation = 'toastOut 0.2s ease forwards';
       setTimeout(() => existing.remove(), 200);
@@ -1291,7 +1291,7 @@ const app = {
         toast.style.animation = 'toastOut 0.2s ease forwards';
         setTimeout(() => toast.remove(), 200);
       }, duration);
-    }, existing ? 200 : 0);
+    }, delay);
   },
 
   async autoEnhance() {
@@ -1319,7 +1319,7 @@ const app = {
     const resultDiv = document.getElementById('aiResultArea');
     const btn = document.getElementById('aiAnalyzeBtn');
     const ocrResultDiv = document.getElementById('ocrResult');
-    const rawText = ocrResultDiv.innerText.trim();
+    const rawText = ocrResultDiv ? ocrResultDiv.innerText.trim() : '';
 
     const placeholderTexts = [
       t('processing'), t('ocrStarting'), t('ocrCancelled'),
@@ -1335,32 +1335,32 @@ const app = {
     resultDiv.innerText = t('aiStarting');
 
     try {
-      let analysis;
-      if (!isResultValid) {
-        analysis = await aiEngine.analyzeCloud('Analisis dokumen ini berdasarkan gambar.', this.canvas.toDataURL());
-      } else {
-        const localResult = await aiEngine.analyzeLocal(rawText);
-        if (aiEngine.isCloudAvailable()) {
-          analysis = await aiEngine.analyzeCloud(rawText);
-          analysis.structuredData = localResult.structuredData;
-        } else {
-          analysis = localResult;
-        }
-      }
+      const textToAnalyze = isResultValid ? rawText : '';
+      const analysis = await aiEngine.analyze(textToAnalyze, this.canvas);
 
       let html = '';
-      if (analysis.mode === 'CLOUD') {
-        html += `<span class="ai-tag">Cloud AI (Gemini)</span>`;
-        html += `<div style="margin-top: 8px; white-space: pre-wrap; border-bottom: 1px solid var(--color-border); padding-bottom: 12px; margin-bottom: 12px;">${this.escapeHtml(analysis.fullAnalysis)}</div>`;
-        if (analysis.structuredData) {
+      html += `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+        <span class="ai-tag">CNN MobileNet v2</span>
+        <span class="ai-tag private-tag">100% On-Device & Privat</span>
+      </div>`;
+      html += `<div style="white-space: pre-wrap; font-size: 13px; line-height: 1.6;">${this.escapeHtml(analysis.fullAnalysis)}</div>`;
+
+      if (analysis.structuredData) {
+        const hasKeys = Object.keys(analysis.structuredData).some(k => {
+          const val = analysis.structuredData[k];
+          return Array.isArray(val) ? val.length > 0 : (val && val !== '-');
+        });
+        if (hasKeys) {
           const structuredText = this.escapeHtml(JSON.stringify(analysis.structuredData, null, 2));
-          html += `<span class="ai-tag">Data Lokal</span><pre style="font-size: 12px; white-space: pre-wrap; margin-top: 4px; color: var(--color-text-secondary);">${structuredText}</pre>`;
+          html += `<div style="margin-top: 10px; border-top: 1px solid var(--color-border); padding-top: 8px;">
+            <span style="font-size: 11px; font-weight: 700; color: var(--color-text-secondary); text-transform: uppercase;">Data Terstruktur JSON</span>
+            <pre style="font-size: 11px; white-space: pre-wrap; margin-top: 4px; padding: 8px; border-radius: 6px; background: rgba(0,0,0,0.04); color: var(--color-text); font-family: monospace;">${structuredText}</pre>
+          </div>`;
         }
-      } else {
-        html += `<div style="white-space: pre-wrap;">${this.escapeHtml(analysis.fullAnalysis)}</div>`;
       }
       
       resultDiv.innerHTML = html;
+      lucide.createIcons();
     } catch (err) {
       resultDiv.innerHTML = `<div style="color: var(--color-destructive);"><strong>Error:</strong> ${this.escapeHtml(err.message)}</div>`;
     } finally {
@@ -1451,55 +1451,30 @@ const app = {
 
   async confirmInpaint() {
     this.saveUndoState();
-    document.getElementById('inpaintProgress').classList.remove('hidden');
-    
+    const progressEl = document.getElementById('inpaintProgress');
+    if (progressEl) progressEl.classList.remove('hidden');
+
+    // Give browser a frame to show progress indicator
+    await new Promise(r => setTimeout(r, 20));
+
     try {
-      const srcCanvas = this.canvas;
-      const origDataURL = srcCanvas.toDataURL('image/png');
-      const maskDataURL = inpaint.getMaskDataURL();
-      const workerUrl = aiEngine._workerUrl;
-      if (!workerUrl) throw new Error('AI service not configured');
-
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), config.AI.timeout);
-      const response = await fetch(workerUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: 'inpaint',
-          image: origDataURL,
-          mask: maskDataURL
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown server error' }));
-        throw new Error(errorData.error || `Server error: ${response.status}`);
+      const success = inpaint.applyInpaint(this.canvas);
+      if (!success) {
+        this.showToast(t('noImage') || 'Pilih area objek terlebih dahulu');
+        return;
       }
-      const data = await response.json();
-      
-      if (!data.image) throw new Error(data.error || 'Inpainting failed');
 
-      const img = new Image();
-      img.onload = () => {
-        srcCanvas.width = img.width;
-        srcCanvas.height = img.height;
-        this.ctx.drawImage(img, 0, 0);
-        
-        this.state.canvasWidth = img.width;
-        this.state.canvasHeight = img.height;
-        this.setCurrentPageImage(img);
-        this.showToast(t('removeDone'));
-      };
-      img.src = data.image.startsWith('data:') ? data.image : 'data:image/png;base64,' + data.image;
-
+      // Update current page with newly inpainted canvas
+      const newImg = new Image();
+      newImg.src = this.canvas.toDataURL('image/jpeg', 0.95);
+      await new Promise(res => { newImg.onload = res; });
+      this.setCurrentPageImage(newImg);
+      this.showToast(t('removeDone'));
     } catch (err) {
       console.error("Inpaint error:", err);
       this.showToast(t('removeError') + ': ' + err.message);
     } finally {
-      document.getElementById('inpaintProgress').classList.add('hidden');
+      if (progressEl) progressEl.classList.add('hidden');
       this.cancelInpaint();
     }
   },
@@ -1583,17 +1558,24 @@ const app = {
           page.currentImageData = null;
         }
 
-        this.canvas.width = state.canvasWidth;
-        this.canvas.height = state.canvasHeight;
-        this.ctx.drawImage(img, 0, 0);
+        // Use the image's natural dimensions for consistent sizing
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        this.canvas.width = w;
+        this.canvas.height = h;
+        this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        this.ctx.drawImage(img, 0, 0, w, h);
 
         this.state.filters = state.filters;
-        this.state.canvasWidth = img.naturalWidth;
-        this.state.canvasHeight = img.naturalHeight;
+        this.state.canvasWidth = w;
+        this.state.canvasHeight = h;
+        this.state.logicalWidth = w;
+        this.state.logicalHeight = h;
         this.state.imageLoaded = true;
 
-        // Update filter UI
+        // Update filter UI and re-apply filters
         this.updateFilterUI();
+        this.applyFilters();
         this.resetZoom();
         resolve();
       };

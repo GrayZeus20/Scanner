@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "ci": "npm test",
     "test": "npx playwright test"
   },
   "devDependencies": {

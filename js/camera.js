@@ -6,6 +6,16 @@ const camera = {
   flashMode: 'off', // 'off' | 'auto' | 'on'
   facingMode: 'environment',
 
+  // Live edge overlay state
+  _overlayCanvas: null,
+  _overlayCtx: null,
+  _overlayActive: false,
+  _overlayRafId: null,
+  _lastDetectTime: 0,
+  _DETECT_INTERVAL: 100, // ~10fps detection (not every frame)
+  _smoothedCorners: null, // EMA smoothed corners
+  _SMOOTH_ALPHA: 0.35, // Exponential moving average factor
+
   get video() {
     if (!this._video) this._video = document.getElementById('video');
     return this._video;
@@ -80,6 +90,7 @@ const camera = {
       });
 
       this.applyCameraEnhancements();
+      this._startOverlay();
       document.getElementById('cameraView').classList.remove('hidden');
       document.getElementById('editorArea')?.classList.add('hidden');
       document.getElementById('bottomNav')?.classList.add('hidden');
@@ -178,7 +189,7 @@ const camera = {
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
     app.loadImageFromSrc(dataUrl);
-    
+
     this.capturedCount++;
     app.showToast(t('photoCaptured') + this.capturedCount + ' ' + t('photoTaken'));
 
@@ -286,7 +297,165 @@ const camera = {
     if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
   },
 
+  // ==================== Live Edge Overlay ====================
+
+  _startOverlay() {
+    if (this._overlayActive) return;
+    this._overlayActive = true;
+    this._smoothedCorners = null;
+
+    this._overlayCanvas = document.getElementById('edgeOverlayCanvas');
+    if (!this._overlayCanvas) return;
+
+    this._overlayCanvas.classList.add('active');
+    this._overlayCtx = this._overlayCanvas.getContext('2d');
+    this._lastDetectTime = 0;
+
+    // Match canvas size to video display size
+    this._resizeOverlay();
+    window.addEventListener('resize', this._resizeOverlayBound = () => this._resizeOverlay());
+
+    this._overlayLoop(performance.now());
+  },
+
+  _stopOverlay() {
+    this._overlayActive = false;
+    if (this._overlayRafId) {
+      cancelAnimationFrame(this._overlayRafId);
+      this._overlayRafId = null;
+    }
+    if (this._overlayCanvas) {
+      this._overlayCanvas.classList.remove('active');
+      const ctx = this._overlayCanvas.getContext('2d');
+      if (ctx) ctx.clearRect(0, 0, this._overlayCanvas.width, this._overlayCanvas.height);
+    }
+    if (this._resizeOverlayBound) {
+      window.removeEventListener('resize', this._resizeOverlayBound);
+    }
+    this._smoothedCorners = null;
+  },
+
+  _resizeOverlay() {
+    if (!this._overlayCanvas || !this.video) return;
+    const rect = this.video.getBoundingClientRect();
+    this._overlayCanvas.width = Math.round(rect.width);
+    this._overlayCanvas.height = Math.round(rect.height);
+  },
+
+  /**
+   * Main overlay render loop — runs via rAF, detection throttled to ~10fps
+   */
+  _overlayLoop(now) {
+    if (!this._overlayActive) return;
+
+    this._overlayRafId = requestAnimationFrame((t) => this._overlayLoop(t));
+
+    // Throttle detection to ~10fps (every 100ms)
+    if (now - this._lastDetectTime < this._DETECT_INTERVAL) {
+      // Still draw the last known corners (smooth animation)
+      this._drawOverlay();
+      return;
+    }
+    this._lastDetectTime = now;
+
+    // Capture current video frame to a small work canvas
+    if (!this.video.videoWidth || !this.video.videoHeight) return;
+
+    const MAX_DETECT = 640;
+    const vw = this.video.videoWidth, vh = this.video.videoHeight;
+    const scale = Math.min(1, MAX_DETECT / Math.max(vw, vh));
+    const dw = Math.round(vw * scale), dh = Math.round(vh * scale);
+
+    const tmp = document.createElement('canvas');
+    tmp.width = dw; tmp.height = dh;
+    tmp.getContext('2d').drawImage(this.video, 0, 0, dw, dh);
+
+    // Detect edges on the small canvas
+    const result = edgeDetection.detectContour(tmp);
+
+    if (result && result.confidence > 0.35) {
+      // Scale corners back to overlay canvas coordinates
+      const overlayW = this._overlayCanvas.width;
+      const overlayH = this._overlayCanvas.height;
+      const cxScale = overlayW / vw;
+      const cyScale = overlayH / vh;
+
+      const rawCorners = result.corners.map(p => ({
+        x: p.x * cxScale,
+        y: p.y * cyScale
+      }));
+
+      // Smooth corners with EMA
+      this._smoothedCorners = this._smoothCorners(this._smoothedCorners, rawCorners);
+    } else {
+      // No detection — fade out
+      this._smoothedCorners = null;
+    }
+
+    this._drawOverlay();
+  },
+
+  /**
+   * Exponential moving average for corner positions (anti-jitter)
+   */
+  _smoothCorners(prev, next) {
+    if (!prev || prev.length !== 4) return next;
+    const a = this._SMOOTH_ALPHA;
+    return next.map((p, i) => ({
+      x: prev[i].x * (1 - a) + p.x * a,
+      y: prev[i].y * (1 - a) + p.y * a
+    }));
+  },
+
+  /**
+   * Draw the overlay quad on the canvas
+   */
+  _drawOverlay() {
+    const ctx = this._overlayCtx;
+    if (!ctx) return;
+    const w = this._overlayCanvas.width, h = this._overlayCanvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const corners = this._smoothedCorners;
+    if (!corners || corners.length < 4) return;
+
+    const [tl, tr, br, bl] = corners;
+
+    // Semi-transparent fill
+    ctx.beginPath();
+    ctx.moveTo(tl.x, tl.y);
+    ctx.lineTo(tr.x, tr.y);
+    ctx.lineTo(br.x, br.y);
+    ctx.lineTo(bl.x, bl.y);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(37, 99, 235, 0.12)';
+    ctx.fill();
+
+    // Solid stroke
+    ctx.strokeStyle = 'rgba(37, 99, 235, 0.9)';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // Corner dots
+    ctx.fillStyle = 'rgba(37, 99, 235, 1)';
+    for (const p of corners) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // White center dot on each corner
+    ctx.fillStyle = '#fff';
+    for (const p of corners) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  },
+
   stop() {
+    this._stopOverlay();
     if (this.stream) {
       // Ensure torch is off before stopping
       const track = this.stream?.getVideoTracks()[0];

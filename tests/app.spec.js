@@ -176,7 +176,7 @@ test('camera button exists and is accessible', async ({ page }) => {
   await page.goto('/');
   const cameraBtn = page.locator('#emptyCamera');
   await expect(cameraBtn).toBeVisible();
-  await expect(cameraBtn.locator('i[data-lucide="camera"]')).toBeAttached();
+  await expect(cameraBtn.locator('i[data-lucide="camera"], svg.lucide-camera')).toBeAttached();
 });
 
 test('filter sheet opens with all controls', async ({ page }) => {
@@ -280,3 +280,65 @@ test('history sheet shows empty state', async ({ page }) => {
   await page.locator('#closeHistory').click();
   await expect(page.locator('#historyView')).toHaveClass(/hidden/);
 });
+
+test('local ML document analysis runs on-device without server dependency', async ({ page }) => {
+  await page.goto('/');
+
+  const pngBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  await page.locator('#fileInput').setInputFiles({
+    name: 'invoice_test.png',
+    mimeType: 'image/png',
+    buffer: pngBuffer,
+  });
+  await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/, { timeout: 8000 });
+
+  // Open OCR sheet
+  await page.locator('#navTools').click();
+  await page.locator('#toolOcrBtn').click();
+  await expect(page.locator('#ocrSheet')).not.toHaveClass(/hidden/);
+
+  // Set sample invoice text in OCR result div
+  await page.evaluate(() => {
+    const el = document.getElementById('ocrResult');
+    el.innerText = 'FAKTUR PEMBELIAN\nNo: INV-2026-001\nTotal: Rp 150.000\nTanggal: 15/08/2026\n2 x Kopi Latte\nHubungi: 08123456789';
+  });
+
+  // Click ML analysis button
+  await page.locator('#aiAnalyzeBtn').click();
+
+  // Result area should appear with CNN / Local ML content
+  const resultArea = page.locator('#aiResultArea');
+  await expect(resultArea).not.toHaveClass(/hidden/);
+  await expect(resultArea).toContainText('MobileNet', { timeout: 10000 });
+  await expect(resultArea).toContainText('Dokumen Keuangan');
+});
+
+test('local inpaint / object eraser opens and cancels cleanly', async ({ page }) => {
+  await page.goto('/');
+
+  const pngBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  await page.locator('#fileInput').setInputFiles({
+    name: 'test.png',
+    mimeType: 'image/png',
+    buffer: pngBuffer,
+  });
+  await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/, { timeout: 8000 });
+
+  await page.locator('#navTools').click();
+  await page.locator('#toolInpaintBtn').click();
+
+  await expect(page.locator('#inpaintOverlay')).not.toHaveClass(/hidden/);
+  await expect(page.locator('#inpaintActionBar')).not.toHaveClass(/hidden/);
+
+  // Cancel inpaint
+  await page.locator('#cancelInpaintBtn').click();
+  await expect(page.locator('#inpaintOverlay')).toHaveClass(/hidden/);
+  await expect(page.locator('#inpaintActionBar')).toHaveClass(/hidden/);
+});
+

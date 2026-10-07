@@ -4,7 +4,7 @@ const manualCrop = {
   magnifier: null,
   wrapper: null,
   canvas: null,
-  handleOffset: 22, // 44px handle / 2 = 22px offset untuk center
+  handleOffset: 27, // 54px handle / 2 = 27px offset untuk center
 
   // Aspect ratio presets: null = free, number = w/h ratio
   RATIO_MAP: { free: null, '1:1': 1, '3:4': 3 / 4, a4: 210 / 297 },
@@ -57,6 +57,10 @@ const manualCrop = {
     const rotateBtn = document.getElementById('cropRotateBtn');
     if (rotateBtn) {
       rotateBtn.addEventListener('click', () => this.rotateStep());
+    }
+    const resetBtn = document.getElementById('resetCropBtn');
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => this.resetCropArea());
     }
   },
 
@@ -208,6 +212,68 @@ const manualCrop = {
     if (this.lockedRatio && this.canvas) {
       this.resetCropArea();
     }
+  },
+
+  /**
+   * Pre-fill crop handles from ML-detected corners.
+   * corners: [{x,y}] in canvas pixel coords, 4 points TL TR BR BL
+   */
+  setDetectedCorners(corners, srcCanvas) {
+    if (!corners || corners.length !== 4 || !this.canvas || !this.wrapper || !this.area) return;
+
+    // Reset zoom and pan FIRST to ensure stable rects
+    if (typeof app !== 'undefined' && app.resetZoom) {
+      app.resetZoom();
+    }
+
+    // Force cache update to get fresh rects
+    this._updateCache();
+
+    const canvasRect = this._cache.canvasRect;
+    const wrapperRect = this._cache.wrapperRect;
+
+    if (!canvasRect || !wrapperRect) return;
+
+    const scaleX = canvasRect.width / srcCanvas.width;
+    const scaleY = canvasRect.height / srcCanvas.height;
+
+    // Map canvas pixel coords to screen coords relative to wrapper
+    const canvasLeft = canvasRect.left - wrapperRect.left;
+    const canvasTop = canvasRect.top - wrapperRect.top;
+
+    const screenCorners = corners.map(p => ({
+      x: p.x * scaleX + canvasLeft,
+      y: p.y * scaleY + canvasTop
+    }));
+
+    // Fit crop area to bounding box of corners
+    const xs = screenCorners.map(p => p.x);
+    const ys = screenCorners.map(p => p.y);
+    const minX = Math.min(...xs), minY = Math.min(...ys);
+    const maxX = Math.max(...xs), maxY = Math.max(...ys);
+    const cw = maxX - minX, ch = maxY - minY;
+
+    if (cw < 20 || ch < 20) return;
+
+    this.area.style.left = minX + 'px';
+    this.area.style.top = minY + 'px';
+    this.area.style.width = cw + 'px';
+    this.area.style.height = ch + 'px';
+    this.area.style.clipPath = '';
+    this.area.style.transform = '';
+    this._rotation = 0;
+
+    // Update state corners
+    this.state.corners = {
+      tl: screenCorners[0],
+      tr: screenCorners[1],
+      br: screenCorners[2],
+      bl: screenCorners[3]
+    };
+
+    // Cache updated position
+    this._updateCache();
+    this.renderQuadrilateral();
   },
 
   resetCropArea() {

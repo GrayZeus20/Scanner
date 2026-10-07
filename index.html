@@ -3,11 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Web-based document scanner with camera capture, auto edge detection, filters, OCR, and PDF export.">
+  <meta name="theme-color" content="#2563EB">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="WebScanner">
   <title>WebScanner</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta property="og:title" content="WebScanner - Pemindai Dokumen Cerdas & Privat">
+  <meta property="og:description" content="Web document scanner dengan deteksi sudut otomatis, filter, OCR lokal, dan ekspor PDF 100% offline di perangkat.">
+  <meta property="og:image" content="icons/icon-512.png">
+  <meta property="og:type" content="website">
+  <link rel="stylesheet" href="css/style.css?v=13">
   <link rel="stylesheet" href="css/dark-mode.css">
   <link rel="manifest" href="manifest.json">
   <script src="https://unpkg.com/lucide@0.460.0"></script>
@@ -106,7 +118,7 @@
             </div>
             <div id="inpaintProgress" class="inpaint-progress-bar hidden">
               <i data-lucide="loader" class="spinner" aria-hidden="true"></i>
-              <span data-i18n="removeStarting">AI sedang menghapus...</span>
+              <span data-i18n="removeStarting">Menghapus objek...</span>
             </div>
 
             <div id="cropActionBar" class="crop-action-bar hidden">
@@ -121,6 +133,9 @@
               </button>
               <button id="cancelCropBtn" class="crop-action-btn crop-cancel" aria-label="Cancel">
                 <i data-lucide="x" aria-hidden="true"></i>
+              </button>
+              <button id="resetCropBtn" class="crop-action-btn crop-reset" aria-label="Reset">
+                <i data-lucide="rotate-ccw" aria-hidden="true"></i>
               </button>
               <button id="confirmCropBtn" class="crop-action-btn crop-confirm" aria-label="Confirm">
                 <i data-lucide="check" aria-hidden="true"></i>
@@ -158,6 +173,7 @@
         <div class="camera-overlay">
           <div class="frame-guide" aria-hidden="true"></div>
           <div id="focusIndicator" class="focus-indicator hidden" aria-hidden="true"></div>
+          <canvas id="edgeOverlayCanvas" class="edge-overlay-canvas" aria-hidden="true"></canvas>
         </div>
         <div class="camera-controls">
           <button id="cancelCamera" class="camera-action-btn danger-btn" aria-label="Cancel Capture">
@@ -211,9 +227,16 @@
       </div>
       <div class="sheet-body">
         <button id="toolCropBtn" class="tool-action-btn">
+          <i data-lucide="scan" aria-hidden="true"></i>
+          <div>
+            <strong data-i18n="detectCrop">Deteksi & Potong</strong>
+            <small data-i18n="detectCropDesc">Otomatis cari sudut dokumen lalu potong</small>
+          </div>
+        </button>
+        <button id="toolManualCropBtn" class="tool-action-btn">
           <i data-lucide="crop" aria-hidden="true"></i>
           <div>
-            <strong data-i18n="autoCrop">Potong</strong>
+            <strong data-i18n="autoCrop">Potong Manual</strong>
             <small data-i18n="cropDesc">Pilih area potong secara manual</small>
           </div>
         </button>
@@ -235,7 +258,7 @@
           <i data-lucide="eraser" aria-hidden="true"></i>
           <div>
             <strong data-i18n="removeObj">Hapus Objek</strong>
-            <small data-i18n="removeObjDesc">Hapus objek dengan AI</small>
+            <small data-i18n="removeObjDesc">Hapus noda / teks (Lokal)</small>
           </div>
         </button>
       </div>
@@ -395,7 +418,7 @@
         </button>
         <button id="aiAnalyzeBtn" class="btn btn-secondary">
           <i data-lucide="sparkles" aria-hidden="true"></i>
-          <span data-i18n="aiAnalyze">Analisis AI</span>
+          <span data-i18n="aiAnalyze">Analisis Dokumen (ML)</span>
         </button>
         <button id="cancelOcrBtn" class="btn btn-danger hidden">
           <i data-lucide="x" aria-hidden="true"></i>
@@ -469,6 +492,9 @@
     <input type="file" id="fileInput" accept="image/*" multiple hidden>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1" defer></script>
+  <script src="js/ml-detector.js"></script>
   <script src="js/config.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/i18n.js"></script>
@@ -480,5 +506,10 @@
   <script src="js/ocr.js"></script>
   <script src="js/inpaint.js"></script>
   <script src="js/app.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      window.MLDetector.init();
+    });
+  </script>
 </body>
 </html>

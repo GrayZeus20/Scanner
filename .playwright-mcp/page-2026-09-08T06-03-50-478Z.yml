@@ -1,0 +1,18 @@
+- generic [ref=f4e2]:
+  - banner [ref=f4e3]:
+    - generic [ref=f4e4]: WebScanner
+    - generic [ref=f4e8]:
+      - button "Undo" [disabled] [ref=f4e9] [cursor=pointer]
+      - button "Redo" [disabled] [ref=f4e11] [cursor=pointer]
+      - generic [ref=f4e13]: Language
+      - combobox "Language" [ref=f4e14] [cursor=pointer]:
+        - option "ID Indonesia" [selected]
+        - option "Eng English"
+      - button "Toggle Dark Mode" [ref=f4e15] [cursor=pointer]
+  - main [ref=f4e17]:
+    - generic [ref=f4e19]:
+      - heading "Belum ada dokumen" [level=2] [ref=f4e21]
+      - paragraph [ref=f4e22]: Ambil foto atau impor gambar untuk memulai
+      - generic [ref=f4e23]:
+        - button "Ambil Foto" [ref=f4e24] [cursor=pointer]
+        - button "Impor File" [ref=f4e27] [cursor=pointer]

@@ -1,5 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
-  <rect width="192" height="192" fill="#1a237e" rx="24"/>
-  <text x="96" y="96" text-anchor="middle" dominant-baseline="central" font-size="80" font-family="sans-serif" font-weight="bold" fill="white">S</text>
-  <text x="96" y="146" text-anchor="middle" font-size="24" font-family="sans-serif" font-weight="500" fill="rgba(255,255,255,0.7)">SCAN</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1D4ED8"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="laserGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.2"/>
+      <stop offset="50%" stop-color="#38BDF8" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#38BDF8" stop-opacity="0.2"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="72" fill="url(#bgGrad)"/>
+  
+  <!-- Document paper -->
+  <rect x="123" y="92" width="266" height="328" rx="20" fill="#FFFFFF" filter="drop-shadow(0 8px 16px rgba(0,0,0,0.15))"/>
+  
+  <!-- Folded corner / detail -->
+  <path d="M 297 92 L 389 184 L 297 184 Z" fill="#E2E8F0"/>
+  
+  <!-- Text lines -->
+  <rect x="164" y="215" width="184" height="18" rx="9" fill="#94A3B8"/>
+  <rect x="164" y="256" width="184" height="18" rx="9" fill="#94A3B8"/>
+  <rect x="164" y="297" width="123" height="18" rx="9" fill="#94A3B8"/>
+  
+  <!-- Laser line -->
+  <line x1="92" y1="256" x2="420" y2="256" stroke="url(#laserGrad)" stroke-width="12" stroke-linecap="round"/>
+  
+  <!-- Corner viewfinder brackets -->
+  <path d="M 61 133 L 61 61 L 133 61" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 379 61 L 451 61 L 451 133" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 61 379 L 61 451 L 133 451" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 379 451 L 451 451 L 451 379" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
