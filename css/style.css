@@ -1098,6 +1098,60 @@ html, body {
   margin-top: 1px;
 }
 
+.tool-action-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.tool-action-card .tool-action-btn {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.upscale-scales-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 10px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-top: none;
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+}
+
+.upscale-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.scale-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.scale-btn:hover {
+  border-color: var(--color-primary);
+}
+
+.scale-btn.active {
+  background: var(--color-primary);
+  color: #ffffff;
+  border-color: var(--color-primary);
+  font-weight: 600;
+}
+
 /* ─── Export Buttons ───────────────────────────────────────────── */
 .export-btn {
   display: flex;
@@ -1779,6 +1833,60 @@ html, body {
     padding: 16px 16px calc(24px + var(--safe-bottom));
   }
 
+  /* Compact and uncrowded mobile header */
+  #header {
+    padding: 0 12px;
+    height: 52px;
+  }
+
+  .header-left .pwa-badge {
+    display: none;
+  }
+
+  .logo-text {
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .header-right {
+    gap: 5px;
+    flex-shrink: 0;
+  }
+
+  .lang-select {
+    padding: 4px 6px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  #darkToggle {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-surface);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .upscale-scales-row {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px 10px 8px 10px;
+  }
+
+  .scale-btn {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+
   #emptyState .empty-actions {
     flex-direction: column;
     width: 100%;
@@ -1790,10 +1898,6 @@ html, body {
     width: 100%;
   }
 
-  .logo-text {
-    font-size: 15px;
-  }
-
   .nav-btn {
     padding: 6px 8px;
     min-width: 44px;
@@ -1802,6 +1906,28 @@ html, body {
 
   .history-actions {
     opacity: 1;
+  }
+}
+
+@media (max-width: 440px) {
+  #header {
+    padding: 0 8px;
+  }
+
+  .logo-text {
+    font-size: 14px;
+  }
+
+  /* On narrow phones, hide disabled undo/redo so header never overflows */
+  #undoBtn:disabled,
+  #redoBtn:disabled {
+    display: none;
+  }
+
+  .lang-select {
+    max-width: 62px;
+    padding: 3px 4px;
+    font-size: 10px;
   }
 }
 

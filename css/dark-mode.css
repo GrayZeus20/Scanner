@@ -1,4 +1,6 @@
-/* ─── Minimalist Dark Mode ─────────────────────────────────────── */
+:root.dark-mode,
+html.dark-mode,
+body.dark-mode,
 .dark-mode {
   --color-bg: #090B10;
   --color-surface: #12151D;
@@ -12,11 +14,34 @@
   --color-accent: #3B82F6;
   --color-accent-hover: #2563EB;
   --color-accent-light: rgba(59, 130, 246, 0.12);
-  --color-primary: #1E2433;
-  --color-on-primary: #F8FAFC;
+  --color-primary: #3B82F6;
+  --color-on-primary: #FFFFFF;
   --color-success: #22C55E;
   --color-warning: #EAB308;
   --color-destructive: #EF4444;
+}
+
+html.dark-mode,
+body.dark-mode {
+  background: #090B10;
+  color: #F8FAFC;
+}
+
+.dark-mode #app,
+.dark-mode #main,
+.dark-mode #previewArea {
+  background: var(--color-bg);
+}
+
+.dark-mode #darkToggle {
+  background: #1A1E29;
+  border-color: #32394A;
+  color: #FBBF24;
+}
+
+.dark-mode #darkToggle:hover {
+  background: #222734;
+  border-color: #475569;
 }
 
 .dark-mode #header {
@@ -72,6 +97,37 @@
 .dark-mode .tool-action-btn:hover {
   background: var(--color-muted);
   border-color: var(--color-border-hover);
+}
+
+.dark-mode .upscale-scales-row {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.dark-mode .scale-btn {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  border-color: var(--color-border);
+}
+
+.dark-mode .scale-btn.active {
+  background: #2563EB;
+  color: #ffffff;
+  border-color: #2563EB;
+}
+
+.dark-mode .nav-btn {
+  color: var(--color-text-secondary);
+}
+
+.dark-mode .nav-btn:hover {
+  color: var(--color-foreground);
+  background: var(--color-muted);
+}
+
+.dark-mode .nav-btn.active {
+  color: #60A5FA;
+  background: rgba(59, 130, 246, 0.12);
 }
 
 .dark-mode .export-btn {

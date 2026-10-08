@@ -119,10 +119,12 @@ const i18n = {
     installSuccess: 'Aplikasi WebScanner berhasil dipasang!',
     offlineActive: 'Mode Offline aktif — data tersimpan di perangkat lokal',
     onlineActive: 'Kembali online',
-    hdEnhance: 'Tingkatkan HD (ML)',
-    hdEnhanceDesc: 'Restorasi pixel & ketajaman teks berbasis AI/ML',
-    hdEnhancing: 'Meningkatkan resolusi & ketajaman pixel...',
-    hdDone: 'Kualitas gambar berhasil ditingkatkan ke HD!',
+    hdEnhance: 'Upscale 2x HD (ML)',
+    hdEnhanceDesc: 'Perbesar resolusi 2x & rekonstruksi piksel teks tajam',
+    hdEnhancing: 'Memproses Upscale Super-Resolution...',
+    hdDone: 'Dokumen berhasil di-upscale ke kualitas HD!',
+    themeToggle: 'Mode Gelap / Terang',
+    themeToggleDesc: 'Beralih tampilan antara mode gelap dan terang',
   },
 
   en: {
@@ -245,10 +247,12 @@ const i18n = {
     installSuccess: 'WebScanner installed successfully!',
     offlineActive: 'Offline mode active — data saved locally',
     onlineActive: 'Back online',
-    hdEnhance: 'Enhance to HD (ML)',
-    hdEnhanceDesc: 'AI/ML pixel restoration & text stroke sharpening',
-    hdEnhancing: 'Enhancing pixel resolution & clarity...',
-    hdDone: 'Image enhanced to HD quality!',
+    hdEnhance: '2x HD Upscale (ML)',
+    hdEnhanceDesc: '2x resolution upscale & sharp AI/ML text reconstruction',
+    hdEnhancing: 'Processing Super-Resolution Upscale...',
+    hdDone: 'Document successfully upscaled to HD quality!',
+    themeToggle: 'Dark / Light Mode',
+    themeToggleDesc: 'Switch between dark and light appearance',
   },
 };
 

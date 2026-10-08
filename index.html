@@ -287,11 +287,27 @@
             <small data-i18n="removeObjDesc">Hapus noda / teks (Lokal)</small>
           </div>
         </button>
-        <button id="toolHdEnhanceBtn" class="tool-action-btn">
-          <i data-lucide="sparkles" aria-hidden="true"></i>
+        <div class="tool-action-card">
+          <button id="toolHdEnhanceBtn" class="tool-action-btn">
+            <i data-lucide="sparkles" aria-hidden="true"></i>
+            <div>
+              <strong data-i18n="hdEnhance">Upscale 2x HD (ML)</strong>
+              <small data-i18n="hdEnhanceDesc">Perbesar resolusi 2x & rekonstruksi piksel teks tajam</small>
+            </div>
+          </button>
+          <div class="upscale-scales-row" id="upscaleScalesRow" aria-label="Pilih Skala Upscale">
+            <span class="upscale-label">Skala:</span>
+            <button type="button" class="scale-btn" data-scale="1.5">1.5x</button>
+            <button type="button" class="scale-btn active" data-scale="2.0">2x (HD)</button>
+            <button type="button" class="scale-btn" data-scale="3.0">3x</button>
+            <button type="button" class="scale-btn" data-scale="4.0">4x (Ultra 1200px)</button>
+          </div>
+        </div>
+        <button id="toolThemeBtn" class="tool-action-btn">
+          <i data-lucide="moon" aria-hidden="true"></i>
           <div>
-            <strong data-i18n="hdEnhance">Tingkatkan HD (ML)</strong>
-            <small data-i18n="hdEnhanceDesc">Restorasi pixel & ketajaman teks berbasis AI/ML</small>
+            <strong data-i18n="themeToggle">Mode Gelap / Terang</strong>
+            <small data-i18n="themeToggleDesc">Beralih tampilan antara mode gelap dan terang</small>
           </div>
         </button>
       </div>

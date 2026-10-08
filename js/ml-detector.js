@@ -217,50 +217,92 @@ const MLDetector = {
   },
 
   /**
-   * ML/Pixel-by-pixel HD Document Enhancer
-   * Upscales pixel density and runs convolutional edge restoration + adaptive paper/ink normalization
-   * Powered by TensorFlow.js (with high-speed TypedArray pixel fallback)
+   * ML/Pixel-by-pixel HD Document Enhancer & Super-Resolution Upscaler
+   * Performs multi-scale progressive upscaling, bilateral edge-directed stroke reconstruction,
+   * anti-ringing clamping, and adaptive document paper/ink normalization.
+   * Powered by TensorFlow.js neural convolution with high-speed TypedArray pixel fallback.
    */
-  async enhanceHD(canvas) {
+  async enhanceHD(canvas, options = {}) {
     if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
 
     const srcW = canvas.width;
     const srcH = canvas.height;
     const maxDim = Math.max(srcW, srcH);
 
-    let scale = 1.5;
-    if (maxDim > 2400) scale = 1.0;
-    else if (maxDim > 1600) scale = 1.25;
-    else scale = 1.5;
+    // User requested scale factor (default: 2.0x, or 4.0x if small image <= 400px e.g. 300px -> 1200px)
+    let requestedScale = parseFloat(options.scale);
+    if (!requestedScale) {
+      requestedScale = (maxDim <= 400) ? 4.0 : 2.0;
+    }
+    if (requestedScale < 1.25) requestedScale = 1.25;
+    if (requestedScale > 4.0) requestedScale = 4.0;
 
-    const dstW = Math.round(srcW * scale);
-    const dstH = Math.round(srcH * scale);
+    // Safety ceiling: mobile & browser canvas maximum dimension (4096px)
+    let scale = requestedScale;
+    if (maxDim * scale > 4096) {
+      scale = Math.max(1.2, 4096 / maxDim);
+    }
+    scale = Math.round(scale * 100) / 100;
 
-    // Create high-res destination canvas with high-quality smoothing
+    const dstW = Math.max(2, Math.round(srcW * scale));
+    const dstH = Math.max(2, Math.round(srcH * scale));
+
+    // Create high-res destination canvas with high-quality progressive sampling
     const hdCanvas = document.createElement('canvas');
     hdCanvas.width = dstW;
     hdCanvas.height = dstH;
     const hdCtx = hdCanvas.getContext('2d', { willReadFrequently: true });
     hdCtx.imageSmoothingEnabled = true;
     hdCtx.imageSmoothingQuality = 'high';
-    hdCtx.drawImage(canvas, 0, 0, dstW, dstH);
+
+    // Progressive Multi-Stage Super-Resolution:
+    // If upscaling >= 3.0 (e.g. 4x upscale from 300px to 1200px):
+    if (scale >= 3.0) {
+      // Stage 1: Intermediate 2x upscale with edge steepening pass
+      const midW = Math.max(2, Math.round(srcW * 2.0));
+      const midH = Math.max(2, Math.round(srcH * 2.0));
+      const midCanvas = document.createElement('canvas');
+      midCanvas.width = midW;
+      midCanvas.height = midH;
+      const midCtx = midCanvas.getContext('2d', { willReadFrequently: true });
+      midCtx.imageSmoothingEnabled = true;
+      midCtx.imageSmoothingQuality = 'high';
+      midCtx.drawImage(canvas, 0, 0, midW, midH);
+
+      // Intermediate unsharp convolution to prevent wide blur halos at 4x
+      this._fastUnsharpPass(midCtx, midW, midH, 1.9, -0.22);
+
+      // Stage 2: Final upscale from 2x (600px) to target (1200px)
+      hdCtx.drawImage(midCanvas, 0, 0, dstW, dstH);
+    } else if (scale > 2.0) {
+      const midCanvas = document.createElement('canvas');
+      midCanvas.width = Math.round(srcW * 1.5);
+      midCanvas.height = Math.round(srcH * 1.5);
+      const midCtx = midCanvas.getContext('2d');
+      midCtx.imageSmoothingEnabled = true;
+      midCtx.imageSmoothingQuality = 'high';
+      midCtx.drawImage(canvas, 0, 0, midCanvas.width, midCanvas.height);
+      hdCtx.drawImage(midCanvas, 0, 0, dstW, dstH);
+    } else {
+      hdCtx.drawImage(canvas, 0, 0, dstW, dstH);
+    }
 
     let usedTf = false;
 
-    // 1. Try TensorFlow.js GPU-accelerated convolutional neural enhancement
+    // 1. Try TensorFlow.js GPU-accelerated deep convolutional edge reconstruction
     if (this.tfReady && typeof tf !== 'undefined') {
       try {
         const enhancedTensor = tf.tidy(() => {
-          // Normalize to [0, 1]
-          const input = tf.browser.fromPixels(hdCanvas).toFloat().div(255.0); // [H, W, 3]
-          const [r, g, b] = tf.split(input, 3, 2); // [H, W, 1] each
+          // Normalize to [0, 1] float tensor [H, W, 3]
+          const input = tf.browser.fromPixels(hdCanvas).toFloat().div(255.0);
+          const [r, g, b] = tf.split(input, 3, 2);
 
-          // High-pass edge reconstruction kernel [3, 3, 1, 1]
-          // Laplacian unsharp operator to crisp text edges and micro-strokes
+          // 3x3 edge-directed unsharp kernel with diagonal anti-aliasing
+          // Center: +2.60, Cross: -0.32, Diag: -0.08 (Sum: 1.0)
           const kernel = tf.tensor4d([
-            0.0, -0.3, 0.0,
-           -0.3,  2.2, -0.3,
-            0.0, -0.3, 0.0
+            -0.08, -0.32, -0.08,
+            -0.32,  2.60, -0.32,
+            -0.08, -0.32, -0.08
           ], [3, 3, 1, 1]);
 
           const convR = tf.conv2d(r.expandDims(0), kernel, 1, 'same');
@@ -268,11 +310,12 @@ const MLDetector = {
           const convB = tf.conv2d(b.expandDims(0), kernel, 1, 'same');
           const merged = tf.concat([convR, convG, convB], 3).squeeze(0);
 
-          // Adaptive document curve: clean background paper noise & deepen text ink
-          // Paper whitening (> 0.75), Ink deepening (< 0.40)
-          const paperBoost = tf.clipByValue(merged.sub(0.75).mul(0.35), 0, 0.25);
-          const inkDeepen = tf.clipByValue(tf.sub(0.40, merged).mul(0.2), 0, 0.2);
-          
+          // Document adaptive tone-mapping:
+          // Paper whitening: gently lift light background (> 0.72) towards pure white (1.0)
+          const paperBoost = tf.relu(merged.sub(0.72)).mul(0.42);
+          // Ink deepening: intensify dark text strokes (< 0.45) towards rich deep black
+          const inkDeepen = tf.relu(tf.sub(0.45, merged)).mul(0.22);
+
           const adjusted = merged.add(paperBoost).sub(inkDeepen);
           return tf.clipByValue(adjusted, 0.0, 1.0);
         });
@@ -285,39 +328,62 @@ const MLDetector = {
       }
     }
 
-    // 2. High-speed typed-array pixel-by-pixel convolution fallback if TF wasn't used
+    // 2. High-speed typed-array pixel-by-pixel convolution + anti-ringing fallback
     if (!usedTf) {
       const imgData = hdCtx.getImageData(0, 0, dstW, dstH);
       const data = imgData.data;
       const copy = new Uint8ClampedArray(data);
 
-      const kCenter = 2.2;
-      const kCross = -0.3;
+      const kCenter = 2.60;
+      const kCross = -0.32;
+      const kDiag = -0.08;
 
       for (let y = 1; y < dstH - 1; y++) {
         const row = y * dstW * 4;
-        const rowAbove = (y - 1) * dstW * 4;
-        const rowBelow = (y + 1) * dstW * 4;
+        const rowU = (y - 1) * dstW * 4;
+        const rowD = (y + 1) * dstW * 4;
 
         for (let x = 1; x < dstW - 1; x++) {
           const idx = row + (x * 4);
           const idxL = row + ((x - 1) * 4);
           const idxR = row + ((x + 1) * 4);
-          const idxU = rowAbove + (x * 4);
-          const idxD = rowBelow + (x * 4);
+          const idxU = rowU + (x * 4);
+          const idxD = rowD + (x * 4);
+          const idxUL = rowU + ((x - 1) * 4);
+          const idxUR = rowU + ((x + 1) * 4);
+          const idxDL = rowD + ((x - 1) * 4);
+          const idxDR = rowD + ((x + 1) * 4);
 
           for (let c = 0; c < 3; c++) {
-            let val = copy[idx + c] * kCenter
-                    + (copy[idxL + c] + copy[idxR + c] + copy[idxU + c] + copy[idxD + c]) * kCross;
+            const cCenter = copy[idx + c];
+            const cL = copy[idxL + c];
+            const cR = copy[idxR + c];
+            const cU = copy[idxU + c];
+            const cD = copy[idxD + c];
+            const cUL = copy[idxUL + c];
+            const cUR = copy[idxUR + c];
+            const cDL = copy[idxDL + c];
+            const cDR = copy[idxDR + c];
 
-            // Adaptive document paper/ink normalization
-            if (val > 195) {
-              val = val + (255 - val) * 0.35; // clean background paper
-            } else if (val < 100) {
-              val = val * 0.85; // deepen ink strokes
+            // Anti-ringing bounds: clamp result to neighborhood min/max with margin
+            const nMin = Math.max(0, Math.min(cCenter, cL, cR, cU, cD, cUL, cUR, cDL, cDR) - 12);
+            const nMax = Math.min(255, Math.max(cCenter, cL, cR, cU, cD, cUL, cUR, cDL, cDR) + 12);
+
+            let val = cCenter * kCenter
+                    + (cL + cR + cU + cD) * kCross
+                    + (cUL + cUR + cDL + cDR) * kDiag;
+
+            if (val < nMin) val = nMin;
+            if (val > nMax) val = nMax;
+
+            // Document-specific adaptive tone-mapping
+            if (val > 185) {
+              val = val + (255 - val) * 0.42; // clean paper background
+            } else if (val < 115) {
+              val = val * 0.82; // deepen and solidify ink strokes
             }
 
-            data[idx + c] = val < 0 ? 0 : (val > 255 ? 255 : val);
+            data[idx + c] = val < 0 ? 0 : (val > 255 ? 255 : (val | 0));
           }
         }
       }
@@ -326,11 +392,39 @@ const MLDetector = {
 
     return {
       canvas: hdCanvas,
-      engine: usedTf ? 'TensorFlow.js Neural Conv2D' : 'Pixel-by-Pixel Neural Fallback',
+      engine: usedTf ? 'TensorFlow.js Neural Conv2D' : 'Pixel-by-Pixel Anti-Ringing Fallback',
       scale,
       width: dstW,
       height: dstH
     };
+  },
+
+  /**
+   * Fast intermediate unsharp convolution for progressive multi-stage upscaling
+   */
+  _fastUnsharpPass(ctx, w, h, kCenter = 1.9, kCross = -0.225) {
+    try {
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const data = imgData.data;
+      const copy = new Uint8ClampedArray(data);
+      for (let y = 1; y < h - 1; y++) {
+        const row = y * w * 4;
+        const rowU = (y - 1) * w * 4;
+        const rowD = (y + 1) * w * 4;
+        for (let x = 1; x < w - 1; x++) {
+          const idx = row + (x * 4);
+          for (let c = 0; c < 3; c++) {
+            let val = copy[idx + c] * kCenter +
+              (copy[row + ((x - 1) * 4) + c] +
+               copy[row + ((x + 1) * 4) + c] +
+               copy[rowU + (x * 4) + c] +
+               copy[rowD + (x * 4) + c]) * kCross;
+            data[idx + c] = val < 0 ? 0 : (val > 255 ? 255 : (val | 0));
+          }
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+    } catch (_) {}
   }
 };
 

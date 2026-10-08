@@ -26,6 +26,7 @@ const app = {
     isPanning: false,
     lastPinchDist: 0,
     isCropping: false,
+    upscaleScale: 2.0,
     undoStack: [],
     redoStack: [],
     maxUndoSteps: 30
@@ -349,7 +350,26 @@ const app = {
       this.toggleSheet('toolsSheet', false);
     });
     document.getElementById('toolHdEnhanceBtn')?.addEventListener('click', () => {
-      this.enhanceHd();
+      this.enhanceHd(this.state.upscaleScale || 2.0);
+      this.toggleSheet('toolsSheet', false);
+    });
+    document.querySelectorAll('#upscaleScalesRow .scale-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('#upscaleScalesRow .scale-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const s = parseFloat(btn.dataset.scale) || 2.0;
+        this.state.upscaleScale = s;
+        const hdBtnStrong = document.querySelector('#toolHdEnhanceBtn strong');
+        if (hdBtnStrong) {
+          hdBtnStrong.textContent = `Upscale ${s}x HD (ML)`;
+        }
+      });
+    });
+    document.getElementById('toolThemeBtn')?.addEventListener('click', () => {
+      this.state.darkMode = !this.state.darkMode;
+      localStorage.setItem('scanner.darkMode', String(this.state.darkMode));
+      this.syncDarkModeUI();
       this.toggleSheet('toolsSheet', false);
     });
     document.getElementById('confirmInpaintBtn').addEventListener('click', () => this.confirmInpaint());
@@ -638,7 +658,25 @@ const app = {
       darkToggle.innerHTML = `<i data-lucide="${this.state.darkMode ? 'sun' : 'moon'}" aria-hidden="true"></i>`;
       darkToggle.setAttribute('aria-label', this.state.darkMode ? t('switchToLight') : t('switchToDark'));
     }
+    const toolThemeBtn = document.getElementById('toolThemeBtn');
+    if (toolThemeBtn) {
+      const icon = toolThemeBtn.querySelector('i, svg');
+      if (icon) {
+        toolThemeBtn.innerHTML = `
+          <i data-lucide="${this.state.darkMode ? 'sun' : 'moon'}" aria-hidden="true"></i>
+          <div>
+            <strong>${this.state.darkMode ? (t('switchToLight') || 'Mode Terang') : (t('switchToDark') || 'Mode Gelap')}</strong>
+            <small>${t('themeToggleDesc') || 'Beralih tampilan antara mode gelap dan terang'}</small>
+          </div>
+        `;
+      }
+    }
+    document.documentElement.classList.toggle('dark-mode', this.state.darkMode);
     document.body.classList.toggle('dark-mode', this.state.darkMode);
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) {
+      themeMeta.setAttribute('content', this.state.darkMode ? '#090B10' : '#2563EB');
+    }
     lucide.createIcons();
   },
 
@@ -1627,12 +1665,17 @@ const app = {
     inpaint.clear();
   },
 
-  async enhanceHd() {
+  async enhanceHd(scale) {
     if (!this.state.imageLoaded || !this.state.pages[this.state.currentPageIndex]) {
       this.showToast(t('noImage'));
       return;
     }
 
+    let scaleNum = parseFloat(scale) || this.state.upscaleScale;
+    if (!scaleNum) {
+      // Auto-detect small image (e.g. 300px -> 1200px)
+      scaleNum = (Math.max(this.canvas.width, this.canvas.height) <= 400) ? 4.0 : 2.0;
+    }
     this.showToast(t('hdEnhancing'));
     await new Promise(r => setTimeout(r, 30));
 
@@ -1643,7 +1686,10 @@ const app = {
 
       this.saveUndoState();
 
-      const result = await window.MLDetector.enhanceHD(this.canvas);
+      const oldW = this.canvas.width;
+      const oldH = this.canvas.height;
+
+      const result = await window.MLDetector.enhanceHD(this.canvas, { scale: scaleNum });
       if (!result || !result.canvas) {
         throw new Error('Gagal memproses peningkatan pixel');
       }
@@ -1662,7 +1708,8 @@ const app = {
       await new Promise(res => { newImg.onload = res; });
       this.setCurrentPageImage(newImg);
 
-      this.showToast(t('hdDone'));
+      const msg = `${t('hdDone')} (${oldW}×${oldH} → ${result.width}×${result.height} px, ${result.scale}x)`;
+      this.showToast(msg, 'success');
     } catch (err) {
       console.error('HD enhance error:', err);
       this.showToast(t('error') + ': ' + err.message);

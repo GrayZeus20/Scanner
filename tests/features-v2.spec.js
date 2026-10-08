@@ -100,4 +100,79 @@ test.describe('New Enhancements Suite', () => {
     expect(postDims.width).toBeGreaterThan(0);
     expect(postDims.height).toBeGreaterThan(0);
   });
+
+  test('Upscale scale preset buttons change scale factor', async ({ page }) => {
+    // Import image
+    await page.locator('#fileInput').setInputFiles({
+      name: 'test.png',
+      mimeType: 'image/png',
+      buffer: pngBuffer,
+    });
+    await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/, { timeout: 8000 });
+
+    // Open tools sheet
+    await page.click('#navTools');
+    await expect(page.locator('#toolsSheet')).toBeVisible();
+
+    // Verify scale buttons exist (1.5x, 2x, 3x, 4x)
+    const scaleBtns = page.locator('#upscaleScalesRow .scale-btn');
+    await expect(scaleBtns).toHaveCount(4);
+
+    // Click 3x scale button
+    const btn3x = page.locator('#upscaleScalesRow .scale-btn[data-scale="3.0"]');
+    await btn3x.click();
+    await expect(btn3x).toHaveClass(/active/);
+    await expect(page.locator('#toolHdEnhanceBtn strong')).toContainText('3x');
+
+    // Click 4x scale button
+    const btn4x = page.locator('#upscaleScalesRow .scale-btn[data-scale="4.0"]');
+    await btn4x.click();
+    await expect(btn4x).toHaveClass(/active/);
+    await expect(page.locator('#toolHdEnhanceBtn strong')).toContainText('4x');
+  });
+
+  test('300px document image upscales 4x to 1200px with super-resolution', async ({ page }) => {
+    // Generate a 300x300 canvas and run MLDetector.enhanceHD with scale 4.0
+    const dims = await page.evaluate(async () => {
+      const c = document.createElement('canvas');
+      c.width = 300;
+      c.height = 300;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 300, 300);
+      ctx.fillStyle = '#000000';
+      ctx.font = '24px sans-serif';
+      ctx.fillText('Test 300px Document', 20, 150);
+
+      const res = await window.MLDetector.enhanceHD(c, { scale: 4.0 });
+      return { width: res.width, height: res.height, scale: res.scale };
+    });
+
+    expect(dims.width).toBe(1200);
+    expect(dims.height).toBe(1200);
+    expect(dims.scale).toBe(4);
+  });
+
+  test('Mobile view (360x740) header does not overflow and dark mode button works cleanly', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto('/');
+
+    const darkBtn = page.locator('#darkToggle');
+    await expect(darkBtn).toBeVisible();
+
+    // Verify dark button is completely within viewport (not pushed offscreen)
+    const box = await darkBtn.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box.x + box.width).toBeLessThanOrEqual(360);
+
+    // Verify toggling dark mode adds class to body and html
+    await darkBtn.click();
+    await expect(page.locator('body')).toHaveClass(/dark-mode/);
+    await expect(page.locator('html')).toHaveClass(/dark-mode/);
+
+    // Toggle back
+    await darkBtn.click();
+    await expect(page.locator('body')).not.toHaveClass(/dark-mode/);
+  });
 });
+
