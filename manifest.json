@@ -2,13 +2,31 @@
   "name": "WebScanner - Pemindai Dokumen Cerdas & Privat",
   "short_name": "WebScanner",
   "description": "Pemindai dokumen berbasis web dengan deteksi sudut otomatis, filter, OCR lokal, dan ekspor PDF tanpa server.",
+  "id": "webscanner-pwa",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#F1F5F9",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui", "browser"],
+  "background_color": "#0F172A",
   "theme_color": "#2563EB",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "categories": ["utilities", "productivity", "business"],
+  "shortcuts": [
+    {
+      "name": "Ambil Foto",
+      "short_name": "Kamera",
+      "description": "Pindai dokumen baru menggunakan kamera",
+      "url": "./?action=camera",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Impor File",
+      "short_name": "Impor",
+      "description": "Pindai dokumen dari gambar tersimpan",
+      "url": "./?action=import",
+      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
   "icons": [
     {
       "src": "icons/icon-192.png",

@@ -17,12 +17,12 @@
   --color-muted: #F1F5F9;
   --color-border: #E2E8F0;
   --color-destructive: #DC2626;
-  --color-success: #22C55E;
-  --color-warning: #F59E0B;
+  --color-success: #16A34A;
+  --color-warning: #D97706;
   --color-ring: #2563EB;
   --color-text: #0F172A;
-  --color-text-secondary: #64748B;
-  --color-text-tertiary: #94A3B8;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #64748B;
 
   --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
   --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
@@ -768,29 +768,41 @@ html, body {
   transform: scale(0.88);
 }
 
-/* ─── Sheet Panels ────────────────────────────────────────────── */
+/* ─── Sheet Panels (Mobile Bottom Sheet) ───────────────────────── */
 .sheet-panel {
   position: fixed;
-  top: 0;
+  top: auto;
+  left: 0;
   right: 0;
   bottom: 0;
-  width: 360px;
-  max-width: 92vw;
-  background: rgba(255, 255, 255, 0.85);
+  width: 100%;
+  max-width: 100%;
+  max-height: 85vh;
+  background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  box-shadow: var(--shadow-xl);
+  box-shadow: 0 -8px 32px rgba(15, 23, 42, 0.16);
   z-index: 50;
   display: flex;
   flex-direction: column;
-  animation: sheetSlideIn var(--transition-slow) forwards;
+  animation: mobileSheetUp var(--transition-slow) cubic-bezier(0.16, 1, 0.3, 1) forwards;
   overflow: hidden;
-  border-left: 1px solid rgba(255, 255, 255, 0.3);
+  border-top: 1px solid var(--color-border);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
 }
 
-@keyframes sheetSlideIn {
-  from { transform: translateX(100%); opacity: 0.5; }
-  to { transform: translateX(0); opacity: 1; }
+@keyframes mobileSheetUp {
+  from { transform: translateY(100%); opacity: 0.5; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.sheet-panel.sheet-exit {
+  animation: mobileSheetDown 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes mobileSheetDown {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(100%); opacity: 0; }
 }
 
 /* ─── Sheet Backdrop Overlay ─────────────────────────────────── */
@@ -809,9 +821,13 @@ html, body {
   pointer-events: auto;
 }
 
-@keyframes backdropFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.sheet-backdrop.backdrop-exit {
+  animation: backdropFadeOut 0.2s ease forwards;
+}
+
+@keyframes backdropFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 .sheet-header {
@@ -1520,43 +1536,66 @@ select:focus-visible,
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 9999; /* ABOVE EVERYTHING */
+  z-index: 9999;
   touch-action: none;
   user-select: none;
   overflow: hidden;
-  pointer-events: auto; /* Ensure events reach handles */
+  pointer-events: none; /* Let non-handle clicks pass to action bar */
 }
 
-/* Dark vignette outside crop — the defining CamScanner visual */
-.crop-area {
-  position: absolute;
-  border: 3px solid #00FF00;
-  cursor: move;
-  z-index: 10000;
-  transition: none;
-  box-shadow:
-    0 0 0 2px #00FF00,
-    0 0 0 9999px rgba(0, 0, 0, 0.7);
-}
-
-/* Rule-of-thirds grid */
-.crop-grid {
+/* SVG Quad and Scrim Layer */
+.crop-svg {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
-  background:
-    linear-gradient(to right, rgba(255, 255, 255, 0.5) 1.5px, transparent 1.5px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.5) 1.5px, transparent 1.5px);
-  background-size: 33.333% 33.333%;
+  z-index: 9999;
 }
 
-/* Touch target: 48×48 minimum per Apple HIG */
+.crop-polygon-outer {
+  fill: none;
+  stroke: rgba(15, 23, 42, 0.95);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.crop-polygon {
+  fill: rgba(37, 99, 235, 0.08);
+  stroke: #2563eb;
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+  pointer-events: auto;
+  cursor: move;
+}
+
+.crop-grid-line {
+  stroke: rgba(255, 255, 255, 0.8);
+  stroke-width: 1.2px;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+  filter: drop-shadow(0 0 1.5px rgba(15, 23, 42, 0.95));
+}
+
+/* Crop area container for handles */
+.crop-area {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10000;
+  border: none;
+  box-shadow: none;
+}
+
+/* Touch target: 54×54 minimum */
 .crop-handle {
   position: absolute;
-  width: 54px; /* Larger target */
+  width: 54px;
   height: 54px;
   background: transparent;
   z-index: 10001;
@@ -1564,47 +1603,52 @@ select:focus-visible,
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: auto;
+  cursor: grab;
 }
 
-/* Solid Circle Handles for maximum visibility (CamScanner style) */
+.crop-handle:active {
+  cursor: grabbing;
+}
+
+/* Triple-tier contrast handles: Visible on pure white, yellow, or dark backgrounds */
 .crop-handle::after {
   content: '';
-  width: 20px;
-  height: 20px;
-  background: #00ff00; /* Neon Green */
-  border: 3px solid #fff;
+  width: 22px;
+  height: 22px;
+  background: #2563eb;
+  border: 3px solid #ffffff;
   border-radius: 50%;
-  box-shadow: 0 0 10px rgba(0, 255, 0, 0.8), 0 2px 4px rgba(0,0,0,0.5);
+  box-shadow:
+    0 0 0 2.5px rgba(15, 23, 42, 0.9),
+    0 4px 10px rgba(0, 0, 0, 0.55);
   transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .crop-handle:active::after {
-  transform: scale(1.5);
-  background: #fff;
-  border-color: #00ff00;
+  transform: scale(1.35);
+  background: #1d4ed8;
+  border-color: #ffffff;
+  box-shadow:
+    0 0 0 3px rgba(15, 23, 42, 0.95),
+    0 6px 14px rgba(37, 99, 235, 0.6);
 }
 
-/* Corner Bracket Overlays (╔ ╗ ╚ ╝) — using borders on pseudo-elements */
+/* High-contrast Corner Bracket Overlays (╔ ╗ ╚ ╝) */
 .crop-handle::before {
   content: '';
   position: absolute;
   width: 34px;
   height: 34px;
   pointer-events: none;
-  border: 4px solid transparent;
+  border: 3.5px solid transparent;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.95));
 }
 
-/* Position brackets based on handle data attribute */
-[data-handle="tl"]::before { top: 0; left: 0; border-top-color: #00ff00; border-left-color: #00ff00; }
-[data-handle="tr"]::before { top: 0; right: 0; border-top-color: #00ff00; border-right-color: #00ff00; }
-[data-handle="bl"]::before { bottom: 0; left: 0; border-bottom-color: #00ff00; border-left-color: #00ff00; }
-[data-handle="br"]::before { bottom: 0; right: 0; border-bottom-color: #00ff00; border-right-color: #00ff00; }
-
-/* Handle positions: offset = half of 54px touch target */
-[data-handle="tl"] { top: -27px; left: -24px; cursor: nw-resize; }
-[data-handle="tr"] { top: -27px; right: -24px; cursor: ne-resize; }
-[data-handle="bl"] { bottom: -27px; left: -24px; cursor: sw-resize; }
-[data-handle="br"] { bottom: -27px; right: -24px; cursor: se-resize; }
+[data-handle="tl"]::before { top: 2px; left: 2px; border-top-color: #2563eb; border-left-color: #2563eb; }
+[data-handle="tr"]::before { top: 2px; right: 2px; border-top-color: #2563eb; border-right-color: #2563eb; }
+[data-handle="bl"]::before { bottom: 2px; left: 2px; border-bottom-color: #2563eb; border-left-color: #2563eb; }
+[data-handle="br"]::before { bottom: 2px; right: 2px; border-bottom-color: #2563eb; border-right-color: #2563eb; }
 
 /* ─── Magnifier Loupe ──────────────────────────────────────────── */
 .crop-magnifier {
@@ -1612,24 +1656,23 @@ select:focus-visible,
   width: 130px;
   height: 130px;
   border-radius: 50%;
-  border: 3px solid #fff;
+  border: 3px solid #ffffff;
   background-repeat: no-repeat;
   pointer-events: none;
-  z-index: 60;
+  z-index: 10020;
   display: none;
   box-shadow:
-    0 0 0 2px var(--color-accent, #3b82f6),
+    0 0 0 2px #2563eb,
     0 8px 32px rgba(0, 0, 0, 0.6);
   overflow: hidden;
 }
 
-/* Center crosshair */
 .crop-magnifier::after {
   content: '';
   position: absolute;
   top: 50%; left: 50%;
   width: 10px; height: 10px;
-  border: 2px solid var(--color-accent, #3b82f6);
+  border: 2px solid #2563eb;
   border-radius: 50%;
   transform: translate(-50%, -50%);
   background: rgba(255, 255, 255, 0.3);
@@ -1643,22 +1686,24 @@ select:focus-visible,
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 24px;
-  z-index: 100;
-  background: rgba(15, 23, 42, 0.92);
+  gap: 12px;
+  z-index: 10050 !important; /* Top layer: always interactive */
+  pointer-events: auto !important;
+  background: rgba(15, 23, 42, 0.94);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  padding: 8px 20px;
+  padding: 8px 18px;
   border-radius: 56px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 8px 32px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(15, 23, 42, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 .crop-action-btn {
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -1667,30 +1712,72 @@ select:focus-visible,
   justify-content: center;
   transition: transform 0.15s, background 0.15s, box-shadow 0.15s;
   touch-action: manipulation;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
 }
-
-.crop-cancel { color: var(--color-destructive); }
-.crop-confirm { color: var(--color-success); }
 
 .crop-action-btn:hover {
-  background: rgba(255,255,255,0.1);
-  box-shadow: 0 0 12px rgba(255, 255, 255, 0.2);
+  transform: scale(1.08);
 }
-.crop-action-btn:active { transform: scale(0.85); }
+.crop-action-btn:active {
+  transform: scale(0.92);
+}
 
 .crop-action-btn i {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
+}
+
+/* High contrast confirm button (WCAG AAA green with solid white icon) */
+.crop-confirm {
+  background: #16a34a !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 12px rgba(22, 163, 74, 0.5);
+}
+.crop-confirm:hover {
+  background: #15803d !important;
+  box-shadow: 0 4px 16px rgba(22, 163, 74, 0.7);
+}
+
+/* High contrast cancel button (WCAG AAA red with solid white icon) */
+.crop-cancel {
+  background: #dc2626 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 12px rgba(220, 38, 38, 0.45);
+}
+.crop-cancel:hover {
+  background: #b91c1c !important;
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.65);
+}
+
+/* Auto detect button */
+.crop-autodetect {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 12px rgba(37, 99, 235, 0.45);
+}
+.crop-autodetect:hover {
+  background: #1d4ed8 !important;
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.65);
+}
+
+/* Reset and Rotate */
+.crop-reset, .crop-rotate {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+.crop-reset:hover, .crop-rotate:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
 /* ─── Crop Presets ─────────────────────────────────────────────── */
 .crop-presets {
   display: flex;
-  gap: 8px;
-  background: rgba(15, 23, 42, 0.5);
-  padding: 6px 10px;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 4px 8px;
   border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .crop-preset-btn {
@@ -1698,7 +1785,7 @@ select:focus-visible,
   border: none;
   border-radius: var(--radius-full);
   background: transparent;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.85);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -1706,14 +1793,14 @@ select:focus-visible,
 }
 
 .crop-preset-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
 }
 
 .crop-preset-btn.active {
-  background: var(--color-accent);
-  color: white;
-  box-shadow: 0 0 8px rgba(37, 99, 235, 0.4);
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.6);
 }
 
 .crop-controls button:active { transform: scale(0.96); }
@@ -1844,17 +1931,279 @@ button:active, .nav-btn:active {
   }
 }
 
-/* ─── Desktop Enhancement ─────────────────────────────────────── */
-@media (min-width: 1024px) {
+/* ─── PWA & Install UI ────────────────────────────────────────── */
+.pwa-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  margin-left: 8px;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  vertical-align: middle;
+}
+
+.dark-mode .pwa-badge {
+  background: rgba(37, 99, 235, 0.25);
+  color: #93c5fd;
+  border-color: rgba(147, 197, 253, 0.3);
+}
+
+.pwa-install-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-accent);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--radius-full);
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+  touch-action: manipulation;
+}
+
+.pwa-install-btn:hover {
+  background: var(--color-accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.5);
+}
+
+.pwa-install-btn:active {
+  transform: translateY(0);
+}
+
+.pwa-install-btn i {
+  width: 16px;
+  height: 16px;
+}
+
+/* ─── Desktop & Widescreen Workspace (min-width: 769px) ────────── */
+@media (min-width: 769px) {
   #app {
-    max-width: 480px;
-    margin: 0 auto;
-    border-left: 1px solid var(--color-border);
-    border-right: 1px solid var(--color-border);
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
   }
 
   body {
+    background: var(--color-bg);
+  }
+
+  /* Desktop Header */
+  #header {
+    height: 60px;
+    padding: 0 24px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .logo-text {
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  /* Desktop Workspace */
+  #main {
+    flex: 1;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #previewArea {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Desktop Empty State */
+  #emptyState {
+    max-width: 580px;
+    padding: 56px 44px;
+    background: var(--color-surface);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xl);
+    border: 1px solid var(--color-border);
+    margin: auto;
+  }
+
+  .dark-mode #emptyState {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  #emptyState .empty-actions {
+    flex-direction: row;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    width: auto;
+  }
+
+  /* Desktop Pages Tray */
+  .pages-tray {
+    padding: 10px 24px;
+    gap: 12px;
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .page-thumb {
+    width: 52px;
+    height: 68px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Desktop Canvas Workspace */
+  .canvas-wrapper {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    background: var(--color-bg);
+    padding: 24px;
+  }
+
+  #mainCanvas {
+    max-width: 92%;
+    max-height: 86%;
+    box-shadow: 0 16px 48px -8px rgba(15, 23, 42, 0.18);
+    border-radius: 8px;
+  }
+
+  .dark-mode #mainCanvas {
+    box-shadow: 0 16px 48px -8px rgba(0, 0, 0, 0.55);
+  }
+
+  /* Desktop Zoom Floating Controls */
+  .zoom-controls {
+    bottom: 32px;
+    right: 32px;
+    gap: 10px;
+  }
+
+  .zoom-btn {
+    width: 46px;
+    height: 46px;
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* Desktop Floating Command Dock (Bottom Nav) */
+  #bottomNav {
+    position: absolute;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-radius: var(--radius-full);
+    padding: 6px 14px;
+    background: rgba(255, 255, 255, 0.94);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow:
+      0 12px 36px rgba(15, 23, 42, 0.14),
+      0 0 0 1px rgba(15, 23, 42, 0.08);
+    display: flex;
+    gap: 8px;
+    width: auto;
+    max-width: 90vw;
+    height: auto;
+    z-index: 90;
+    border-top: none;
+  }
+
+  .dark-mode #bottomNav {
+    background: rgba(30, 41, 59, 0.94);
+    box-shadow:
+      0 12px 36px rgba(0, 0, 0, 0.5),
+      0 0 0 1px rgba(255, 255, 255, 0.12);
+  }
+
+  .nav-btn {
+    flex-direction: row;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    transition: all var(--transition-fast);
+  }
+
+  .nav-btn:hover {
     background: var(--color-muted);
+    color: var(--color-accent);
+    transform: translateY(-1px);
+  }
+
+  .dark-mode .nav-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .nav-btn.active {
+    background: var(--color-accent-light);
+    color: var(--color-accent);
+  }
+
+  .nav-btn i {
+    width: 18px;
+    height: 18px;
+  }
+
+  .nav-btn span {
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  /* Desktop Inspector Drawer for Sheets */
+  .sheet-panel {
+    top: 60px;
+    left: auto;
+    right: 0;
+    bottom: 0;
+    width: 420px;
+    max-width: 40vw;
+    height: auto;
+    max-height: none;
+    border-radius: 0;
+    border-left: 1px solid var(--color-border);
+    border-top: none;
+    box-shadow: -8px 0 32px rgba(15, 23, 42, 0.1);
+    animation: desktopDrawerIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .sheet-panel.sheet-exit {
+    animation: desktopDrawerOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
+
+  .dark-mode .sheet-panel {
+    border-left-color: rgba(255, 255, 255, 0.12);
+    box-shadow: -8px 0 32px rgba(0, 0, 0, 0.45);
+  }
+
+  @keyframes desktopDrawerIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  @keyframes desktopDrawerOut {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
+  }
+
+  .sheet-body {
+    padding: 24px;
+    overflow-y: auto;
   }
 }
 

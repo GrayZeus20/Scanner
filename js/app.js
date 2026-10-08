@@ -136,6 +136,73 @@ const app = {
         this.showToast(t('newVersion'), 'info');
       });
     }
+
+    // PWA Install prompt and offline/online status
+    this.initPwaInstall();
+
+    // PWA shortcut navigation actions
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const action = urlParams.get('action');
+      if (action === 'camera') {
+        setTimeout(() => this.openCamera(), 350);
+      } else if (action === 'import') {
+        setTimeout(() => document.getElementById('fileInput')?.click(), 350);
+      }
+    } catch (_) {}
+  },
+
+  initPwaInstall() {
+    let deferredPrompt = null;
+    const pwaBtn = document.getElementById('pwaInstallBtn');
+    const emptyInstallBtn = document.getElementById('emptyInstallBtn');
+
+    // Check if running as standalone PWA
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+
+    if (!isStandalone) {
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        if (pwaBtn) pwaBtn.classList.remove('hidden');
+        if (emptyInstallBtn) emptyInstallBtn.classList.remove('hidden');
+        lucide.createIcons();
+      });
+
+      const handleInstall = async () => {
+        if (!deferredPrompt) {
+          this.showToast('Gunakan menu browser untuk menginstal WebScanner', 'info');
+          return;
+        }
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          this.showToast(t('installSuccess') || 'Aplikasi berhasil dipasang!', 'info');
+        }
+        deferredPrompt = null;
+        if (pwaBtn) pwaBtn.classList.add('hidden');
+        if (emptyInstallBtn) emptyInstallBtn.classList.add('hidden');
+      };
+
+      pwaBtn?.addEventListener('click', handleInstall);
+      emptyInstallBtn?.addEventListener('click', handleInstall);
+
+      window.addEventListener('appinstalled', () => {
+        deferredPrompt = null;
+        if (pwaBtn) pwaBtn.classList.add('hidden');
+        if (emptyInstallBtn) emptyInstallBtn.classList.add('hidden');
+        this.showToast(t('installSuccess') || 'Aplikasi berhasil dipasang!', 'info');
+      });
+    }
+
+    // Network status listener
+    window.addEventListener('offline', () => {
+      this.showToast(t('offlineActive') || 'Mode offline aktif', 'warning');
+    });
+    window.addEventListener('online', () => {
+      this.showToast(t('onlineActive') || 'Kembali online', 'info');
+    });
   },
 
   initEventListeners() {
@@ -249,34 +316,7 @@ const app = {
 
     document.getElementById('toolCropBtn').addEventListener('click', async () => {
       this.toggleSheet('toolsSheet', false);
-      this.showToast(t('processing'));
-
-      // Detect edges on current canvas
-      const result = window.MLDetector?.detect
-        ? await window.MLDetector.detect(this.canvas)
-        : (typeof edgeDetection !== 'undefined' ? edgeDetection.detectContour(this.canvas) : null);
-      if (result && result.confidence > 0.35) {
-        // Pre-fill manual crop with detected corners — NO resetCropArea!
-        this.showEditor();
-        this.updatePagesTray();
-
-        // Show crop overlay with detected corners
-        const overlay = document.getElementById('cropOverlay');
-        const actionBar = document.getElementById('cropActionBar');
-        overlay.classList.remove('hidden');
-        actionBar.classList.remove('hidden');
-        this.state.isCropping = true;
-
-        manualCrop.init();
-        // Delay to ensure layout is settled before positioning handles
-        requestAnimationFrame(() => {
-          manualCrop.setDetectedCorners(result.corners, this.canvas);
-          this.showToast(t('cropInstruction'));
-        });
-      } else {
-        // Fallback: just open manual crop with default
-        this.startManualCrop();
-      }
+      await this.autoCrop();
     });
 
     document.getElementById('toolManualCropBtn').addEventListener('click', () => {
@@ -1009,8 +1049,8 @@ const app = {
     actionBar.classList.remove('hidden');
     this.state.isCropping = true;
     
-    manualCrop.resetCropArea();
     manualCrop.init();
+    manualCrop.resetCropArea();
   },
 
   confirmManualCrop() {
@@ -1054,34 +1094,105 @@ const app = {
     manualCrop.hideMagnifier();
   },
 
-  autoCrop() {
+  async autoCrop() {
     if (!this.state.imageLoaded) {
       this.showToast(t('noImage'));
-      return;
+      return false;
     }
     this.showToast(t('processing'));
-    setTimeout(() => {
-      try {
-        const success = edgeDetection.detectAndCrop(this.canvas, this.ctx);
-        if (success) {
+
+    try {
+      // 1. Detect document contour & corners using on-device ML/CV
+      let result = window.MLDetector?.detect
+        ? await window.MLDetector.detect(this.canvas)
+        : (typeof edgeDetection !== 'undefined' ? edgeDetection.detectContour(this.canvas) : null);
+
+      if (!result || result.confidence < 0.3) {
+        if (typeof edgeDetection !== 'undefined') {
+          result = edgeDetection.detectContour(this.canvas, { relaxed: true });
+        }
+      }
+
+      // 2. If valid 4 corners found, perform perspective warp directly
+      if (result && result.corners && result.corners.length === 4) {
+        const ordered = (typeof edgeDetection !== 'undefined' && edgeDetection.orderCorners)
+          ? edgeDetection.orderCorners(result.corners)
+          : result.corners;
+
+        const topW = Math.hypot(ordered[1].x - ordered[0].x, ordered[1].y - ordered[0].y);
+        const botW = Math.hypot(ordered[2].x - ordered[3].x, ordered[2].y - ordered[3].y);
+        const leftH = Math.hypot(ordered[3].x - ordered[0].x, ordered[3].y - ordered[0].y);
+        const rightH = Math.hypot(ordered[2].x - ordered[1].x, ordered[2].y - ordered[1].y);
+        const targetW = Math.max(30, Math.round(Math.max(topW, botW)));
+        const targetH = Math.max(30, Math.round(Math.max(leftH, rightH)));
+
+        const warped = (typeof edgeDetection !== 'undefined' && edgeDetection.warpPerspective)
+          ? edgeDetection.warpPerspective(this.canvas, ordered, targetW, targetH)
+          : null;
+
+        if (warped && warped.width >= 20 && warped.height >= 20) {
+          this.saveUndoState();
+          this.canvas.width = warped.width;
+          this.canvas.height = warped.height;
+          this.ctx.drawImage(warped, 0, 0);
+
+          this.state.canvasWidth = warped.width;
+          this.state.canvasHeight = warped.height;
+          this.state.imageLoaded = true;
+
           const croppedImage = new Image();
           croppedImage.onload = () => {
             this.setCurrentPageImage(croppedImage);
-            this.state.canvasWidth = this.canvas.width;
-            this.state.canvasHeight = this.canvas.height;
-            this.state.imageLoaded = true;
-            this.showToast(t('cropSuccess'));
             this.applyFilters();
           };
           croppedImage.src = this.canvas.toDataURL();
-        } else {
-          this.showToast(t('error'));
+
+          this.showToast(t('cropSuccess'));
+          return true;
         }
-      } catch (err) {
-        console.error('Auto crop failed:', err);
-        this.showToast(t('error'));
       }
-    }, 100);
+
+      // If confidence too low or no distinct quadrilateral detected, gracefully open manual crop
+      this.showToast('Sudut dokumen tidak terdeteksi jelas. Membuka potong manual.');
+      this.startManualCrop();
+      if (result && result.corners && result.corners.length === 4) {
+        requestAnimationFrame(() => {
+          manualCrop.setDetectedCorners(result.corners, this.canvas);
+        });
+      }
+      return false;
+    } catch (err) {
+      console.error('Auto crop error:', err);
+      this.startManualCrop();
+      return false;
+    }
+  },
+
+  async autoDetectForManualCrop() {
+    if (!this.state.imageLoaded) return;
+    this.showToast(t('processing'));
+    try {
+      let result = window.MLDetector?.detect
+        ? await window.MLDetector.detect(this.canvas)
+        : (typeof edgeDetection !== 'undefined' ? edgeDetection.detectContour(this.canvas) : null);
+
+      if (!result || result.confidence < 0.25) {
+        if (typeof edgeDetection !== 'undefined') {
+          result = edgeDetection.detectContour(this.canvas, { relaxed: true });
+        }
+      }
+
+      if (result && result.corners && result.corners.length === 4) {
+        manualCrop.setDetectedCorners(result.corners, this.canvas);
+        this.showToast(t('cropInstruction'));
+      } else {
+        manualCrop.resetCropArea();
+        this.showToast('Sudut tidak ditemukan, area direset');
+      }
+    } catch (err) {
+      console.error('Auto detect for manual crop failed:', err);
+      manualCrop.resetCropArea();
+    }
   },
 
   rotate(deg) {

@@ -115,6 +115,10 @@ const i18n = {
     exportBatchPdfDesc: 'Simpan semua halaman sebagai PDF',
     exportBatchJpg: 'Semua Halaman (JPG)',
     exportBatchJpgDesc: 'Simpan semua gambar',
+    installApp: 'Pasang Aplikasi',
+    installSuccess: 'Aplikasi WebScanner berhasil dipasang!',
+    offlineActive: 'Mode Offline aktif — data tersimpan di perangkat lokal',
+    onlineActive: 'Kembali online',
   },
 
   en: {
@@ -233,6 +237,10 @@ const i18n = {
     exportBatchPdfDesc: 'Save all pages as PDF',
     exportBatchJpg: 'All Pages (JPG)',
     exportBatchJpgDesc: 'Save all images',
+    installApp: 'Install App',
+    installSuccess: 'WebScanner installed successfully!',
+    offlineActive: 'Offline mode active — data saved locally',
+    onlineActive: 'Back online',
   },
 };
 

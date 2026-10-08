@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Playwright test artifacts
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Local dev output & stray test files
+initial-state.png
+test-dummy.png
+localhost.json
+localhost.md
+test.js
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS junk
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.*
+!.env.example

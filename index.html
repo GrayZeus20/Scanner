@@ -34,9 +34,14 @@
         <div class="logo">
           <i data-lucide="scan-eye" class="logo-icon" aria-hidden="true"></i>
           <span class="logo-text" data-i18n="appName">WebScanner</span>
+          <span class="pwa-badge" title="Progressive Web App">PWA</span>
         </div>
       </div>
         <div class="header-right">
+          <button id="pwaInstallBtn" class="pwa-install-btn hidden" title="Pasang Aplikasi PWA" aria-label="Install App">
+            <i data-lucide="download-cloud" aria-hidden="true"></i>
+            <span class="pwa-install-text" data-i18n="installApp">Pasang App</span>
+          </button>
           <button id="undoBtn" class="icon-btn" title="Undo" disabled>
             <i data-lucide="undo-2" aria-hidden="true"></i>
           </button>
@@ -80,6 +85,10 @@
               <i data-lucide="upload" aria-hidden="true"></i>
               <span data-i18n="importFile">Impor File</span>
             </button>
+            <button id="emptyInstallBtn" class="btn btn-secondary btn-install-empty hidden" title="Pasang Aplikasi">
+              <i data-lucide="download-cloud" aria-hidden="true"></i>
+              <span data-i18n="installApp">Pasang Aplikasi</span>
+            </button>
           </div>
         </div>
         <div id="editorArea" class="hidden">
@@ -88,8 +97,22 @@
             <canvas id="mainCanvas" aria-label="Document Canvas"></canvas>
             <!-- Manual Crop Overlay (CamScanner-style) -->
             <div id="cropOverlay" class="crop-overlay hidden">
+              <svg id="cropSvg" class="crop-svg" aria-hidden="true">
+                <defs>
+                  <mask id="cropMask">
+                    <rect width="100%" height="100%" fill="white" />
+                    <polygon id="cropMaskPolygon" fill="black" />
+                  </mask>
+                </defs>
+                <rect width="100%" height="100%" fill="rgba(15, 23, 42, 0.65)" mask="url(#cropMask)" />
+                <polygon id="cropPolygonOuter" class="crop-polygon-outer" />
+                <polygon id="cropPolygon" class="crop-polygon" />
+                <line id="cropGridH1" class="crop-grid-line" />
+                <line id="cropGridH2" class="crop-grid-line" />
+                <line id="cropGridV1" class="crop-grid-line" />
+                <line id="cropGridV2" class="crop-grid-line" />
+              </svg>
               <div id="cropArea" class="crop-area">
-                <div class="crop-grid" aria-hidden="true"></div>
                 <div class="crop-handle" data-handle="tl" aria-label="Resize Top Left"></div>
                 <div class="crop-handle" data-handle="tr" aria-label="Resize Top Right"></div>
                 <div class="crop-handle" data-handle="bl" aria-label="Resize Bottom Left"></div>
@@ -128,6 +151,9 @@
                 <button class="crop-preset-btn" data-ratio="3:4">3:4</button>
                 <button class="crop-preset-btn" data-ratio="a4" data-i18n="cropA4">A4</button>
               </div>
+              <button id="cropAutoDetectBtn" class="crop-action-btn crop-autodetect" title="Deteksi Otomatis" aria-label="Auto Detect">
+                <i data-lucide="sparkles" aria-hidden="true"></i>
+              </button>
               <button id="cropRotateBtn" class="crop-action-btn crop-rotate" aria-label="Rotate">
                 <i data-lucide="rotate-cw" aria-hidden="true"></i>
               </button>
