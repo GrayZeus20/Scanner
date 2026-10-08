@@ -348,6 +348,10 @@ const app = {
       this.startInpaint();
       this.toggleSheet('toolsSheet', false);
     });
+    document.getElementById('toolHdEnhanceBtn')?.addEventListener('click', () => {
+      this.enhanceHd();
+      this.toggleSheet('toolsSheet', false);
+    });
     document.getElementById('confirmInpaintBtn').addEventListener('click', () => this.confirmInpaint());
     document.getElementById('cancelInpaintBtn').addEventListener('click', () => this.cancelInpaint());
 
@@ -359,6 +363,12 @@ const app = {
     });
     document.getElementById('cancelOcrBtn')?.addEventListener('click', () => {
       this.cancelOcr();
+    });
+    document.getElementById('retryOcrBtn')?.addEventListener('click', () => {
+      this.startOcr();
+    });
+    document.getElementById('ocrLangSelect')?.addEventListener('change', () => {
+      this.startOcr();
     });
 
     document.getElementById('navExport').addEventListener('click', () => {
@@ -883,6 +893,7 @@ const app = {
     document.querySelectorAll('.export-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const format = btn.dataset.format;
+        if (!format) return; // Do not trigger download for buttons without format like shareBtn
         const canvas = this.canvas;
         const quality = qualitySlider ? parseInt(qualitySlider.value) / 100 : 0.85;
         if (format === 'pdf' || format === 'batchPdf') {
@@ -932,13 +943,21 @@ const app = {
     }
     try {
       const blob = await new Promise(r => this.canvas.toBlob(r, 'image/jpeg', 0.92));
+      if (!blob) throw new Error('Failed to generate image');
       const file = new File([blob], 'scan_' + Date.now() + '.jpg', { type: 'image/jpeg' });
-      await navigator.share({ title: 'WebScanner', files: [file] });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ title: 'WebScanner', files: [file] });
+      } else {
+        await navigator.share({ title: 'WebScanner' });
+      }
       this.toggleSheet('exportSheet', false);
     } catch (err) {
-      if (err.name !== 'AbortError') {
-        this.showToast(t('error'));
+      // User cancelled sharing in system dialog (AbortError) - do nothing
+      if (err.name === 'AbortError') {
+        return;
       }
+      console.warn('Share error:', err);
+      this.showToast(t('error'));
     }
   },
 
@@ -1018,6 +1037,14 @@ const app = {
 
         const output = new ImageData(e.data.output, this.canvas.width, this.canvas.height);
         this.ctx.putImageData(output, 0, 0);
+        this.state.isFilterWorkerRunning = false;
+        if (progressEl) progressEl.classList.add('hidden');
+        worker.terminate();
+        resolve();
+      };
+
+      worker.onerror = (err) => {
+        console.error('Filter worker error:', err);
         this.state.isFilterWorkerRunning = false;
         if (progressEl) progressEl.classList.add('hidden');
         worker.terminate();
@@ -1520,19 +1547,22 @@ const app = {
     this.state.ocrAborted = false;
     lucide.createIcons();
 
+    const langSelect = document.getElementById('ocrLangSelect');
+    const selectedLang = langSelect ? langSelect.value : 'ind+eng';
+
     try {
       const text = await ocrEngine.recognize(this.canvas, (progress) => {
         this.updateOcrProgress(progress);
-      }, () => this.state.ocrAborted);
+      }, () => this.state.ocrAborted, selectedLang);
       if (!this.state.ocrAborted) {
-        resultDiv.innerText = text || '(No text detected)';
+        resultDiv.innerText = text || '(Tidak ada teks terdeteksi)';
         this.showToast(t('ocrDone'));
       }
     } catch (err) {
       if (this.state.ocrAborted) {
         resultDiv.innerHTML = `<p style="color: var(--color-text-secondary)">${t('ocrCancelled')}</p>`;
       } else {
-        resultDiv.innerText = 'Error: ' + err.message;
+        resultDiv.innerHTML = `<p style="color: var(--color-destructive)"><strong>Gagal memproses OCR:</strong><br>${this.escapeHtml(err.message)}</p>`;
       }
     } finally {
       this.state.isOcrRunning = false;
@@ -1595,6 +1625,48 @@ const app = {
     document.getElementById('inpaintActionBar')?.classList.add('hidden');
     this.state.isCropping = false;
     inpaint.clear();
+  },
+
+  async enhanceHd() {
+    if (!this.state.imageLoaded || !this.state.pages[this.state.currentPageIndex]) {
+      this.showToast(t('noImage'));
+      return;
+    }
+
+    this.showToast(t('hdEnhancing'));
+    await new Promise(r => setTimeout(r, 30));
+
+    try {
+      if (!window.MLDetector?.enhanceHD) {
+        throw new Error('Fitur ML belum siap');
+      }
+
+      this.saveUndoState();
+
+      const result = await window.MLDetector.enhanceHD(this.canvas);
+      if (!result || !result.canvas) {
+        throw new Error('Gagal memproses peningkatan pixel');
+      }
+
+      // Update current canvas dimensions and content
+      this.canvas.width = result.canvas.width;
+      this.canvas.height = result.canvas.height;
+      this.ctx.drawImage(result.canvas, 0, 0);
+
+      this.state.canvasWidth = result.canvas.width;
+      this.state.canvasHeight = result.canvas.height;
+
+      // Update page original image and thumbnails
+      const newImg = new Image();
+      newImg.src = result.canvas.toDataURL('image/jpeg', 0.95);
+      await new Promise(res => { newImg.onload = res; });
+      this.setCurrentPageImage(newImg);
+
+      this.showToast(t('hdDone'));
+    } catch (err) {
+      console.error('HD enhance error:', err);
+      this.showToast(t('error') + ': ' + err.message);
+    }
   },
 
   // --- Undo/Redo ---

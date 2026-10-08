@@ -1,18 +1,22 @@
-/* ─── Dark Mode ────────────────────────────────────────────────── */
+/* ─── Minimalist Dark Mode ─────────────────────────────────────── */
 .dark-mode {
-  --color-bg: #0F172A;
-  --color-surface: #1E293B;
-  --color-foreground: #F1F5F9;
+  --color-bg: #090B10;
+  --color-surface: #12151D;
+  --color-foreground: #F8FAFC;
   --color-text: #F8FAFC;
-  --color-text-secondary: #CBD5E1;
-  --color-text-tertiary: #94A3B8;
-  --color-muted: #1E293B;
-  --color-border: #334155;
-  --color-accent-light: rgba(37, 99, 235, 0.15);
-  --color-primary: #334155;
+  --color-text-secondary: #94A3B8;
+  --color-text-tertiary: #64748B;
+  --color-muted: #1A1E29;
+  --color-border: #222734;
+  --color-border-hover: #32394A;
+  --color-accent: #3B82F6;
+  --color-accent-hover: #2563EB;
+  --color-accent-light: rgba(59, 130, 246, 0.12);
+  --color-primary: #1E2433;
   --color-on-primary: #F8FAFC;
-  --color-success: #4ADE80;
-  --color-warning: #FBBF24;
+  --color-success: #22C55E;
+  --color-warning: #EAB308;
+  --color-destructive: #EF4444;
 }
 
 .dark-mode #header {
@@ -26,9 +30,9 @@
 }
 
 .dark-mode .sheet-panel {
-  background: rgba(30, 41, 59, 0.85);
-  border-color: rgba(51, 65, 85, 0.5);
-  border-left-color: rgba(51, 65, 85, 0.5);
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
 }
 
 .dark-mode .canvas-wrapper {
@@ -36,7 +40,13 @@
 }
 
 .dark-mode #mainCanvas {
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+}
+
+.dark-mode .btn-primary {
+  background: #F8FAFC;
+  color: #090B10;
+  border-color: #F8FAFC;
 }
 
 .dark-mode .btn-secondary {
@@ -46,7 +56,22 @@
 }
 
 .dark-mode .btn-secondary:hover {
-  background: var(--color-border);
+  background: var(--color-muted);
+  border-color: var(--color-border-hover);
+}
+
+.dark-mode .btn-danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.dark-mode .tool-action-btn {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+
+.dark-mode .tool-action-btn:hover {
+  background: var(--color-muted);
+  border-color: var(--color-border-hover);
 }
 
 .dark-mode .export-btn {
@@ -55,8 +80,8 @@
 }
 
 .dark-mode .export-btn:hover {
-  background: var(--color-accent-light);
-  border-color: var(--color-accent);
+  background: var(--color-muted);
+  border-color: var(--color-border-hover);
 }
 
 .dark-mode .history-item {
@@ -65,7 +90,8 @@
 }
 
 .dark-mode .history-item:hover {
-  border-color: var(--color-text-tertiary);
+  border-color: var(--color-border-hover);
+  background: var(--color-muted);
 }
 
 .dark-mode .history-meta span {
@@ -82,8 +108,21 @@
   color: var(--color-text-secondary);
 }
 
+.dark-mode .lang-select:hover {
+  border-color: var(--color-border-hover);
+  color: var(--color-text);
+}
+
 .dark-mode .filter-slider {
   background: var(--color-border);
+}
+
+.dark-mode .filter-slider::-webkit-slider-thumb {
+  background: var(--color-foreground);
+}
+
+.dark-mode .filter-slider::-moz-range-thumb {
+  background: var(--color-foreground);
 }
 
 .dark-mode .filter-action-btn {
@@ -93,91 +132,81 @@
 }
 
 .dark-mode .filter-action-btn:hover {
-  background: var(--color-accent-light);
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+  background: var(--color-muted);
+  border-color: var(--color-border-hover);
+  color: var(--color-foreground);
+}
+
+.dark-mode .zoom-controls {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.dark-mode .zoom-btn {
+  color: var(--color-text-secondary);
+}
+
+.dark-mode .zoom-btn:hover {
+  background: var(--color-muted);
+  color: var(--color-foreground);
 }
 
 .dark-mode .ocr-result {
-  background: var(--color-bg);
+  background: var(--color-muted);
   border-color: var(--color-border);
   color: var(--color-text);
 }
 
 .dark-mode #aiResultArea {
-  background: var(--color-bg);
+  background: var(--color-muted);
   border-color: var(--color-border);
   border-left-color: var(--color-accent);
 }
 
-.dark-mode .api-key-input {
-  background: var(--color-bg);
+.dark-mode .icon-btn:hover:not(:disabled) {
+  background: var(--color-muted);
   border-color: var(--color-border);
-  color: var(--color-text);
-}
-
-.dark-mode .icon-btn:hover {
-  background: var(--color-border);
   color: var(--color-foreground);
 }
 
-.dark-mode .nav-btn:hover {
-  background: var(--color-border);
-  color: var(--color-foreground);
+.dark-mode .pwa-badge {
+  background: var(--color-muted);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
 }
 
-.dark-mode .btn-danger:hover {
-  background: rgba(220, 38, 38, 0.1);
+.dark-mode .pwa-install-btn {
+  background: #F8FAFC;
+  color: #090B10;
 }
 
 .dark-mode .toast {
-  background: var(--color-foreground);
-  color: var(--color-bg);
+  background: #F8FAFC;
+  color: #090B10;
 }
 
 .dark-mode .toggle-slider {
   background: var(--color-border);
 }
 
+.dark-mode .toggle input:checked + .toggle-slider {
+  background: #F8FAFC;
+}
+
+.dark-mode .toggle input:checked + .toggle-slider::before {
+  background: #090B10;
+}
+
 .dark-mode .frame-guide {
-  border-color: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
-.dark-mode .camera-switch-btn {
-  background: rgba(255, 255, 255, 0.1);
+.dark-mode .empty-icon {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--color-accent);
 }
 
-.dark-mode .flash-btn.flash-auto {
-  background: rgba(37, 99, 235, 0.5);
-}
-
-.dark-mode .capture-preview {
-  border-color: #334155;
-}
-
-@media (min-width: 1024px) {
-  .dark-mode body {
-    background: var(--color-bg);
-  }
-}
-
-.dark-mode .sheet-backdrop {
-  background: rgba(2, 6, 23, 0.6);
-}
-
-.dark-mode .crop-presets {
-  background: rgba(30, 41, 59, 0.7);
-}
-
-.dark-mode .crop-preset-btn {
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.dark-mode .crop-preset-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-}
-
-.dark-mode .mask-canvas {
-  opacity: 0.6;
+.dark-mode #emptyState {
+  border-color: var(--color-border);
 }

@@ -119,6 +119,10 @@ const i18n = {
     installSuccess: 'Aplikasi WebScanner berhasil dipasang!',
     offlineActive: 'Mode Offline aktif — data tersimpan di perangkat lokal',
     onlineActive: 'Kembali online',
+    hdEnhance: 'Tingkatkan HD (ML)',
+    hdEnhanceDesc: 'Restorasi pixel & ketajaman teks berbasis AI/ML',
+    hdEnhancing: 'Meningkatkan resolusi & ketajaman pixel...',
+    hdDone: 'Kualitas gambar berhasil ditingkatkan ke HD!',
   },
 
   en: {
@@ -241,6 +245,10 @@ const i18n = {
     installSuccess: 'WebScanner installed successfully!',
     offlineActive: 'Offline mode active — data saved locally',
     onlineActive: 'Back online',
+    hdEnhance: 'Enhance to HD (ML)',
+    hdEnhanceDesc: 'AI/ML pixel restoration & text stroke sharpening',
+    hdEnhancing: 'Enhancing pixel resolution & clarity...',
+    hdDone: 'Image enhanced to HD quality!',
   },
 };
 
