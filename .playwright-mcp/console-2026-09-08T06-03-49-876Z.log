@@ -1,2 +1,0 @@
-[      68ms] Unexpected token ')'
-[   37578ms] [LOG] MobileNet load failed: Failed to fetch @ http://localhost:8080/js/ml-detector.js:32
