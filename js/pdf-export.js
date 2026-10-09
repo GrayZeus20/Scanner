@@ -1,5 +1,17 @@
 const pdfExport = {
-  async exportToPdf(canvases, qualityOverride) {
+  _prepareCanvas(canvas, quality) {
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = canvas.width;
+    tempCanvas.height = canvas.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.fillStyle = '#FFFFFF';
+    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    tempCtx.drawImage(canvas, 0, 0);
+    return tempCanvas.toDataURL('image/jpeg', quality);
+  },
+
+  /** Build PDF as Blob (no auto-download) — used by folder save path. */
+  async toPdfBlob(canvases, qualityOverride) {
     if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
       throw new Error('jsPDF library tidak tersedia. Coba perbarui halaman.');
     }
@@ -22,16 +34,7 @@ const pdfExport = {
         throw new Error('Salah satu halaman tidak valid.');
       }
 
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = canvas.width;
-      tempCanvas.height = canvas.height;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.fillStyle = '#FFFFFF';
-      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-      tempCtx.drawImage(canvas, 0, 0);
-
-      const imgData = tempCanvas.toDataURL('image/jpeg', quality);
-      
+      const imgData = this._prepareCanvas(canvas, quality);
       const canvasRatio = canvas.width / canvas.height;
       const pdfRatio = pdfWidth / pdfHeight;
 
@@ -51,11 +54,11 @@ const pdfExport = {
       pdf.addImage(imgData, 'JPEG', x, y, imgW, imgH);
     }
 
-    pdf.save('scan_' + Date.now() + '.pdf');
-    return true;
+    return pdf.output('blob');
   },
 
-  exportToImage(canvas, format, customName, qualityOverride) {
+  /** Build image as Blob (no auto-download). */
+  toImageBlob(canvas, format, qualityOverride) {
     const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
     const quality = format === 'png' ? 1 : (qualityOverride || 0.85);
 
@@ -63,25 +66,43 @@ const pdfExport = {
       throw new Error('Canvas tidak valid untuk ekspor.');
     }
 
-    let dataURL;
-    if (format === 'png') {
-        dataURL = canvas.toDataURL(mimeType, quality);
-    } else {
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = canvas.width;
-        tempCanvas.height = canvas.height;
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.fillStyle = '#FFFFFF';
-        tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-        tempCtx.drawImage(canvas, 0, 0);
-        dataURL = tempCanvas.toDataURL(mimeType, quality);
-    }
+    const src = format === 'png'
+      ? canvas.toDataURL(mimeType, quality)
+      : this._prepareCanvas(canvas, quality);
 
+    return this.dataURLToBlob(src);
+  },
+
+  dataURLToBlob(dataURL) {
+    const [header, body] = dataURL.split(',');
+    const mime = header.match(/data:(.*?);/)[1];
+    const bin = atob(body);
+    const len = bin.length;
+    const arr = new Uint8Array(len);
+    for (let i = 0; i < len; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  },
+
+  /** Fallback path — browser anchor download (kept for compatibility). */
+  async exportToPdf(canvases, qualityOverride) {
+    const blob = await this.toPdfBlob(canvases, qualityOverride);
+    this._downloadBlob(blob, 'scan_' + Date.now() + '.pdf');
+    return true;
+  },
+
+  exportToImage(canvas, format, customName, qualityOverride) {
+    const blob = this.toImageBlob(canvas, format, qualityOverride);
+    this._downloadBlob(blob, customName || ('scan_' + Date.now() + '.' + format));
+  },
+
+  _downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.download = customName || ('scan_' + Date.now() + '.' + format);
-    link.href = dataURL;
+    link.download = filename;
+    link.href = url;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 };

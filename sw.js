@@ -1,4 +1,4 @@
-const CACHE_NAME = 'webscanner-v13';
+const CACHE_NAME = 'webscanner-v14';
 
 const LOCAL_ASSETS = [
   './',
@@ -13,6 +13,7 @@ const LOCAL_ASSETS = [
   'js/manual-crop.js',
   'js/pdf-export.js',
   'js/storage.js',
+  'js/deepscan.js',
   'js/ocr.js',
   'js/inpaint.js',
   'js/ai.js',

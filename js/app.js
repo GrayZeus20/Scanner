@@ -2,6 +2,10 @@ const app = {
   state: {
     pages: [],
     currentPageIndex: -1,
+    activeSessionId: null,
+    dirty: false,
+    sessionsCache: [],
+    pendingOpenSessionId: null,
     lang: 'id',
     darkMode: false,
     imageLoaded: false,
@@ -34,6 +38,37 @@ const app = {
 
   canvas: document.getElementById('mainCanvas'),
   ctx: document.getElementById('mainCanvas').getContext('2d', { willReadFrequently: true }),
+
+  // ─── Event registry (state changes only via these) ───
+  EVENTS: {
+    'session:create': null,   // payload: { name?, pages } — emitter: camera.finish, import batch, saveActiveSession
+    'session:open': null,     // payload: { id } — emitter: home card click
+    'session:delete': null,   // payload: { id } — emitter: home card delete
+    'session:rename': null,   // payload: { id, name } — emitter: home card rename
+    'deepscan:run': null,     // payload: { files } — emitter: import / drop
+    'export:save': null       // payload: { format } — emitter: download center
+  },
+
+  emit(event, payload) {
+    const handler = this.EVENTS[event];
+    if (!handler) {
+      console.warn('[events] unhandled event:', event, payload);
+      return;
+    }
+    return handler(payload);
+  },
+
+  dumpState() {
+    const dump = {
+      activeSessionId: this.state.activeSessionId,
+      dirty: this.state.dirty,
+      pages: this.state.pages.length,
+      currentPageIndex: this.state.currentPageIndex,
+      sessionsCount: this.state.sessionsCache.length
+    };
+    console.log('[dumpState]', dump, this.state.sessionsCache);
+    return dump;
+  },
 
   setActiveNav(id) {
     document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -108,12 +143,27 @@ const app = {
 
     this.state.lang = localStorage.getItem('scanner.lang') || detectLanguage();
     setLanguage(this.state.lang);
-    document.getElementById('langSwitcher').value = this.state.lang;
+    document.querySelectorAll('#langMenu [data-lang]').forEach((el) => {
+      el.setAttribute('aria-selected', String(el.dataset.lang === this.state.lang));
+    });
     this.initEventListeners();
     this.syncDarkModeUI();
     camera.bindCaptureHandler();
     lucide.createIcons();
-    storage.init().catch(err => {
+    this.registerEvents();
+    storage.init().then(async () => {
+      // One-time migration: legacy per-image scans → sessions
+      try {
+        const [sessions, legacy] = await Promise.all([storage.getSessions(), storage.getHistory()]);
+        if (sessions.length === 0 && legacy.length > 0) {
+          await storage.legacyMigrateToSessions();
+        }
+        const after = await storage.getSessions();
+        if (after.length > 0) this.showHome();
+      } catch (err) {
+        console.warn('Migration skipped:', err);
+      }
+    }).catch(err => {
       console.warn('Storage init failed:', err);
       this.showToast(t('storageError'), 'error');
     });
@@ -156,7 +206,6 @@ const app = {
   initPwaInstall() {
     let deferredPrompt = null;
     const pwaBtn = document.getElementById('pwaInstallBtn');
-    const emptyInstallBtn = document.getElementById('emptyInstallBtn');
 
     // Check if running as standalone PWA
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
@@ -167,7 +216,6 @@ const app = {
         e.preventDefault();
         deferredPrompt = e;
         if (pwaBtn) pwaBtn.classList.remove('hidden');
-        if (emptyInstallBtn) emptyInstallBtn.classList.remove('hidden');
         lucide.createIcons();
       });
 
@@ -183,16 +231,13 @@ const app = {
         }
         deferredPrompt = null;
         if (pwaBtn) pwaBtn.classList.add('hidden');
-        if (emptyInstallBtn) emptyInstallBtn.classList.add('hidden');
       };
 
       pwaBtn?.addEventListener('click', handleInstall);
-      emptyInstallBtn?.addEventListener('click', handleInstall);
 
       window.addEventListener('appinstalled', () => {
         deferredPrompt = null;
         if (pwaBtn) pwaBtn.classList.add('hidden');
-        if (emptyInstallBtn) emptyInstallBtn.classList.add('hidden');
         this.showToast(t('installSuccess') || 'Aplikasi berhasil dipasang!', 'info');
       });
     }
@@ -200,10 +245,67 @@ const app = {
     // Network status listener
     window.addEventListener('offline', () => {
       this.showToast(t('offlineActive') || 'Mode offline aktif', 'warning');
+      document.getElementById('offlineBadge')?.classList.remove('hidden');
     });
     window.addEventListener('online', () => {
       this.showToast(t('onlineActive') || 'Kembali online', 'info');
+      document.getElementById('offlineBadge')?.classList.add('hidden');
     });
+    if (!navigator.onLine) {
+      document.getElementById('offlineBadge')?.classList.remove('hidden');
+    }
+  },
+
+  registerEvents() {
+    this.EVENTS['session:create'] = async ({ name, pages } = {}) => {
+      const src = pages || this.state.pages;
+      if (!src.length) return null;
+      const sessionPages = src.map((p, i) => ({
+        name: p.name || `page_${i + 1}.jpg`,
+        image: p.originalImage?.src || p.image || p.pendingSrc || '',
+        w: p.w || p.originalImage?.naturalWidth || 0,
+        h: p.h || p.originalImage?.naturalHeight || 0
+      }));
+      if (sessionPages.length > 30) { this.showToast(t('sessionFull'), 'error'); return null; }
+      try {
+        let saved;
+        if (this.state.activeSessionId) {
+          saved = await storage.updateSession(this.state.activeSessionId, { pages: sessionPages });
+        } else {
+          saved = await storage.saveSession(name, sessionPages);
+          this.state.activeSessionId = saved.id;
+        }
+        this.state.dirty = false;
+        this.emit('session:refresh');
+        return saved;
+      } catch (err) {
+        console.error('session:create failed:', err);
+        if (err?.name === 'QuotaExceededError') this.showToast(t('storageFull'), 'error');
+        else this.showToast(t('error'), 'error');
+        return null;
+      }
+    };
+
+    this.EVENTS['session:open'] = ({ id } = {}) => this.openSession(id);
+
+    this.EVENTS['session:delete'] = async ({ id } = {}) => {
+      if (!id) return;
+      await storage.deleteSession(id);
+      if (this.state.activeSessionId === id) this.state.activeSessionId = null;
+      this.emit('session:refresh');
+    };
+
+    this.EVENTS['session:rename'] = async ({ id, name } = {}) => {
+      if (!id || !name) return;
+      await storage.updateSession(id, { name });
+      this.emit('session:refresh');
+    };
+
+    this.EVENTS['session:refresh'] = () => this.refreshHome();
+
+    this.EVENTS['deepscan:run'] = async ({ files } = {}) => this.importBatch(files);
+
+    this.EVENTS['export:save'] = ({ format } = {}) => this.performExport(format);
   },
 
   initEventListeners() {
@@ -234,10 +336,37 @@ const app = {
       }
     });
 
-    document.getElementById('langSwitcher').addEventListener('change', (e) => {
-      this.state.lang = e.target.value;
+    // Lang picker: button shows compact "ID/ENG", menu shows full labels
+    const langBtn = document.getElementById('langSwitcher');
+    const langMenu = document.getElementById('langMenu');
+    const syncLangOptions = () => {
+      langMenu.querySelectorAll('[data-lang]').forEach((el) => {
+        el.setAttribute('aria-selected', String(el.dataset.lang === this.state.lang));
+      });
+    };
+    const closeLangMenu = () => {
+      langMenu.classList.add('hidden');
+      langBtn.setAttribute('aria-expanded', 'false');
+    };
+    langBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const nowHidden = langMenu.classList.toggle('hidden');
+      langBtn.setAttribute('aria-expanded', String(!nowHidden));
+      if (!nowHidden) syncLangOptions();
+    });
+    langMenu.addEventListener('click', (e) => {
+      const opt = e.target.closest('[data-lang]');
+      if (!opt) return;
+      this.state.lang = opt.dataset.lang;
       localStorage.setItem('scanner.lang', this.state.lang);
-      setLanguage(e.target.value);
+      setLanguage(this.state.lang);
+      syncLangOptions();
+      closeLangMenu();
+    });
+    document.addEventListener('click', (e) => {
+      if (!langMenu.classList.contains('hidden') && !e.target.closest('.lang-picker')) {
+        closeLangMenu();
+      }
     });
 
     document.getElementById('darkToggle').addEventListener('click', () => {
@@ -260,11 +389,7 @@ const app = {
 
     document.getElementById('fileInput').addEventListener('change', (e) => {
       if (e.target.files.length > 0) {
-        Array.from(e.target.files).forEach(file => {
-          if (file.type.startsWith('image/')) {
-            this.loadFile(file);
-          }
-        });
+        this.emit('deepscan:run', { files: Array.from(e.target.files) });
         e.target.value = '';
       }
     });
@@ -290,11 +415,7 @@ const app = {
       mainEl.classList.remove('drag-over');
       const files = e.dataTransfer.files;
       if (files.length > 0) {
-        Array.from(files).forEach(file => {
-          if (file.type.startsWith('image/')) {
-            this.loadFile(file);
-          }
-        });
+        this.emit('deepscan:run', { files: Array.from(files) });
       }
     });
 
@@ -306,8 +427,23 @@ const app = {
     document.getElementById('closeHistory').addEventListener('click', () => {
       camera.stop();
       document.getElementById('historyView').classList.add('hidden');
+      if (this.state.pages.length > 0) {
+        document.getElementById('editorArea')?.classList.remove('hidden');
+        document.getElementById('bottomNav')?.classList.remove('hidden');
+      } else {
+        document.getElementById('emptyState')?.classList.remove('hidden');
+        document.getElementById('bottomNav')?.classList.add('hidden');
+      }
       this.setActiveNav(null);
     });
+    document.getElementById('newSessionBtn')?.addEventListener('click', () => {
+      if (this.state.pages.length > 0 && this.state.dirty) {
+        this.showSessionGuard(this.state.pages.length, { mode: 'new' });
+      } else {
+        this.startNewSession();
+      }
+    });
+    this.bindSessionGuard();
 
     document.getElementById('navTools').addEventListener('click', () => {
       this.toggleSheet('toolsSheet', true);
@@ -392,6 +528,8 @@ const app = {
     });
 
     document.getElementById('navExport').addEventListener('click', () => {
+      this.renderDlPreviewStrip();
+      this.updateFolderStatus();
       this.toggleSheet('exportSheet', true);
       lucide.createIcons();
     });
@@ -428,6 +566,20 @@ const app = {
     this.initFilterControls();
     this.initExportButtons();
     this.initZoomControls();
+  },
+
+  renderDlPreviewStrip() {
+    const strip = document.getElementById('dlPreviewStrip');
+    if (!strip) return;
+    strip.innerHTML = '';
+    this.state.pages.forEach((page, idx) => {
+      const src = page.originalImage?.src || page.pendingSrc || '';
+      const div = document.createElement('div');
+      div.className = 'dl-thumb' + (idx === this.state.currentPageIndex ? ' active' : '');
+      div.innerHTML = `<img src="${src}" alt="${this.escapeHtml(page.name || 'page ' + (idx + 1))}"><span>${idx + 1}</span>`;
+      div.onclick = () => { this.state.currentPageIndex = idx; if (page.pendingSrc) this.renderPendingPage(idx); else this.renderPage(idx); this.renderDlPreviewStrip(); };
+      strip.appendChild(div);
+    });
   },
 
   initZoomControls() {
@@ -647,9 +799,11 @@ const app = {
   },
 
   showEditor() {
+    document.getElementById('historyView')?.classList.add('hidden');
     document.getElementById('editorArea')?.classList.remove('hidden');
     document.getElementById('bottomNav')?.classList.remove('hidden');
     document.getElementById('emptyState')?.classList.add('hidden');
+    this.setActiveNav(null);
   },
 
   syncDarkModeUI() {
@@ -690,28 +844,96 @@ const app = {
 
   openCamera() {
     camera.stop();
+    document.getElementById('historyView')?.classList.add('hidden');
     camera.start();
   },
 
-  loadFile(file) {
-    if (!file.type.startsWith('image/')) return;
-    
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      this.loadImageFromSrc(e.target.result);
-    };
-    reader.readAsDataURL(file);
+  /**
+   * DeepScan batch import: validate → detect → load pages → one new session.
+   */
+  async importBatch(files) {
+    if (!files || files.length === 0) return;
+    const images = files.filter((f) => f.type.startsWith('image/'));
+    const rejected = files.length - images.length;
+
+    if (images.length === 0) {
+      this.showToast(files[0]?.type === 'application/pdf' ? t('pdfNotSupported') : t('unsupportedFile'), 'error');
+      return;
+    }
+
+    this.showToast(t('processing'));
+
+    // ponytail: autoCrop warp off on import — keeps original dims (crop.spec floor); flip true + adjust tests if auto-warp on import wanted
+    const { pages, errors } = await deepscan.batchImport(images, { autoCrop: false, createSession: false });
+
+    // If editor already has an open unsaved doc, guard before appending new pages
+    if (this.state.pages.length > 0 && this.state.dirty) {
+      this._pendingBatch = pages;
+      this.showSessionGuard(pages.length, { mode: 'import' });
+      return;
+    }
+
+    this._applyBatch(pages, errors, rejected);
   },
 
-  loadImageFromSrc(src) {
+  _applyBatch(pages, errors, rejected = 0) {
+    if (pages.length === 0) {
+      this.showToast(errors[0]?.error || t('unsupportedFile'), 'error');
+      return;
+    }
+
+    // Append: batch adds pages into current working doc (1 sesi = semua gambar kerja)
+    const startIdx = this.state.pages.length;
+    pages.forEach((p) => {
+      this.state.pages.push({ originalImage: null, currentImageData: null, name: p.name, pendingSrc: p.image, w: p.w, h: p.h });
+    });
+    this.state.currentPageIndex = startIdx;
+    this.state.dirty = true;
+
+    if (this.state.pages.length > 30) {
+      this.state.pages.splice(30);
+      this.showToast(t('sessionFull'), 'error');
+    }
+
+    this.showEditor();
+    this.updatePagesTray();
+    this.renderPendingPage(this.state.currentPageIndex);
+
+    if (errors.length > 0 || rejected > 0) {
+      this.showToast(t('batchErrors', errors.length + rejected), 'error');
+    }
+
+    this.emit('session:create', {});
+  },
+
+  renderPendingPage(index) {
+    const page = this.state.pages[index];
+    if (!page) return;
+    if (page.pendingSrc) {
+      // keep pendingSrc until img.onload attaches originalImage (session:create may map it first)
+      this.loadImageFromSrc(page.pendingSrc, { keepSession: true, index });
+    } else if (page.originalImage) {
+      this.renderPage(index);
+    }
+  },
+
+  loadImageFromSrc(src, opts = {}) {
     const img = new Image();
     img.onload = async () => {
-      const page = {
-        originalImage: img,
-        currentImageData: null
-      };
-      this.state.pages.push(page);
-      this.state.currentPageIndex = this.state.pages.length - 1;
+      if (opts.keepSession) {
+        // existing page (session open / batch): attach to pinned index, dirty unchanged
+        const idx = opts.index ?? this.state.currentPageIndex;
+        if (this.state.pages[idx]) {
+          this.state.pages[idx].originalImage = img;
+          this.state.pages[idx].pendingSrc = null;
+        }
+      } else {
+        this.state.dirty = true;
+        const page = { originalImage: img, currentImageData: null };
+        this.state.pages.push(page);
+        this.state.currentPageIndex = this.state.pages.length - 1;
+        this.state.activeSessionId = null;
+      }
 
       this.showEditor();
       this.updatePagesTray();
@@ -772,6 +994,7 @@ const app = {
   renderPage(index) {
     const page = this.state.pages[index];
     if (!page) return;
+    if (!page.originalImage) { this.renderPendingPage(index); return; }
     this.renderImage(page.originalImage);
     this.state.currentPageIndex = index;
     this.resetZoom();
@@ -786,9 +1009,10 @@ const app = {
       thumb.draggable = true;
       thumb.dataset.index = idx;
       
-      if (page.originalImage) {
+      const thumbSrc = page.originalImage?.src || page.pendingSrc;
+      if (thumbSrc) {
         const img = document.createElement('img');
-        img.src = page.originalImage.src;
+        img.src = thumbSrc;
         img.alt = t('appName') + ' page ' + (idx + 1);
         thumb.appendChild(img);
       } else {
@@ -807,7 +1031,9 @@ const app = {
       thumb.appendChild(removeBtn);
 
       thumb.onclick = () => {
-        this.renderPage(idx);
+        this.state.currentPageIndex = idx;
+        if (page.pendingSrc) this.renderPendingPage(idx);
+        else this.renderPage(idx);
         this.updatePagesTray();
       };
 
@@ -841,6 +1067,7 @@ const app = {
       return;
     }
     this.state.pages.splice(idx, 1);
+    this.state.dirty = true;
     if (idx <= this.state.currentPageIndex) {
       this.state.currentPageIndex = Math.max(0, this.state.currentPageIndex - 1);
     }
@@ -852,6 +1079,7 @@ const app = {
     const page = this.state.pages.splice(from, 1)[0];
     this.state.pages.splice(to, 0, page);
     this.state.currentPageIndex = to;
+    this.state.dirty = true;
     this.renderPage(to);
     this.updatePagesTray();
   },
@@ -932,46 +1160,137 @@ const app = {
       btn.addEventListener('click', () => {
         const format = btn.dataset.format;
         if (!format) return; // Do not trigger download for buttons without format like shareBtn
-        const canvas = this.canvas;
-        const quality = qualitySlider ? parseInt(qualitySlider.value) / 100 : 0.85;
+        if (this.state.pages.length === 0) { this.showToast(t('noPagesYet'), 'error'); return; }
         if (format === 'pdf' || format === 'batchPdf') {
           this.toggleSheet('exportSheet', false);
           this.showPdfPreview();
           return;
-        } else if (format === 'batchJpg') {
-          this.state.pages.forEach((page, i) => {
-            const img = page.originalImage;
-            const tempCanvas = document.createElement('canvas');
-            const w = img.naturalWidth || img.width;
-            const h = img.naturalHeight || img.height;
-            tempCanvas.width = w;
-            tempCanvas.height = h;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.filter = [
-              `brightness(${100 + this.state.filters.brightness}%)`,
-              `contrast(${100 + this.state.filters.contrast}%)`,
-              `saturate(${100 + this.state.filters.saturation}%)`,
-              this.state.filters.grayscale ? 'grayscale(100%)' : '',
-              this.state.filters.sepia ? 'sepia(100%)' : '',
-              this.state.filters.invert ? 'invert(100%)' : '',
-            ].filter(Boolean).join(' ');
-            tempCtx.drawImage(img, 0, 0, w, h);
-            pdfExport.exportToImage(tempCanvas, 'jpg', `scan_${Date.now()}_${i + 1}.jpg`, quality);
-          });
-          storage.saveScan(canvas, 'multi_scan_' + Date.now()).catch(console.warn);
-        } else {
-          pdfExport.exportToImage(canvas, format, null, quality);
-          storage.saveScan(canvas, 'scan_' + Date.now()).catch((err) => {
-            if (err?.name === 'QuotaExceededError') {
-              this.showToast(t('storageFull'));
-            } else {
-              console.warn(err);
-            }
-          });
         }
-        this.toggleSheet('exportSheet', false);
+        this.emit('export:save', { format });
       });
     });
+
+    document.getElementById('pickFolderBtn')?.addEventListener('click', () => this.pickDownloadFolder());
+    document.getElementById('saveToFolderBtn')?.addEventListener('click', () => {
+      if (this.state.pages.length === 0) { this.showToast(t('noPagesYet'), 'error'); return; }
+      this.emit('export:save', { format: 'pdf' });
+    });
+    this.updateFolderStatus();
+  },
+
+  sessionLabel() {
+    const s = this.state.sessionsCache.find(x => x.id === this.state.activeSessionId);
+    if (s) return s.name.replace(/[^\w\-]+/g, '_').slice(0, 40);
+    return 'Sesi_' + Date.now().toString(36);
+  },
+
+  async updateFolderStatus() {
+    const el = document.getElementById('folderStatus');
+    if (!el) return;
+    try {
+      const handle = await storage.getDirHandle();
+      el.textContent = handle ? `${handle.name}/${config.DOWNLOAD.dirName}/` : `${config.DOWNLOAD.dirName}/ (browser download)`;
+    } catch (_) {
+      el.textContent = `${config.DOWNLOAD.dirName}/ (browser download)`;
+    }
+  },
+
+  async pickDownloadFolder() {
+    if (!window.showDirectoryPicker) {
+      this.showToast(t('folderFallback'), 'warning');
+      return;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      await storage.setDirHandle(handle);
+      this.updateFolderStatus();
+      this.showToast(t('folderPicked'), 'success');
+    } catch (err) {
+      if (err?.name !== 'AbortError') {
+        console.warn('pickFolder error:', err);
+        this.showToast(t('error'), 'error');
+      }
+    }
+  },
+
+  showDlProgress(show, pct = 0, text) {
+    const wrap = document.getElementById('dlProgress');
+    const fill = document.getElementById('dlProgressFill');
+    const label = document.getElementById('dlProgressText');
+    if (!wrap) return;
+    wrap.classList.toggle('hidden', !show);
+    if (show) {
+      if (fill) fill.style.width = pct + '%';
+      if (label) label.textContent = text || t('downloadProgress');
+    }
+  },
+
+  /** Write jobs [{name, blob}] into Scanner/ folder; anchor fallback. Returns true if folder write used. */
+  async saveFiles(jobs) {
+    const handle = await storage.getDirHandle().catch(() => null);
+    if (handle && window.showDirectoryPicker) {
+      try {
+        if (handle.queryPermission) {
+          let perm = await handle.queryPermission({ mode: 'readwrite' });
+          if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'readwrite' });
+          if (perm !== 'granted') throw new Error('permission-denied');
+        }
+        const dir = await handle.getDirectoryHandle(config.DOWNLOAD.dirName, { create: true });
+        let i = 0;
+        for (const job of jobs) {
+          const fh = await dir.getFileHandle(job.name, { create: true });
+          const writer = await fh.createWritable();
+          await writer.write(job.blob);
+          await writer.close();
+          i++;
+          this.showDlProgress(true, Math.round((i / jobs.length) * 100), t('downloadProgress'));
+        }
+        return true;
+      } catch (err) {
+        if (err?.name === 'AbortError') return false;
+        console.warn('Folder write failed, falling back to browser download:', err);
+      }
+    }
+    jobs.forEach((job) => pdfExport._downloadBlob(job.blob, 'Scanner-' + job.name));
+    return false;
+  },
+
+  async performExport(format) {
+    if (this.state.pages.length === 0) { this.showToast(t('noPagesYet'), 'error'); return; }
+    const qualitySlider = document.getElementById('exportQuality');
+    const quality = qualitySlider ? parseInt(qualitySlider.value) / 100 : 0.85;
+    const base = `${this.sessionLabel()}_${new Date().toISOString().slice(0, 10)}`;
+
+    this.showDlProgress(true, 10, t('downloadProgress'));
+    try {
+      let jobs = [];
+      if (format === 'pdf' || format === 'batchPdf') {
+        const canvases = await this.renderAllPagesForPdf();
+        const blob = await pdfExport.toPdfBlob(canvases, quality);
+        jobs = [{ name: `${base}.pdf`, blob }];
+      } else if (format === 'batchJpg') {
+        const canvases = await this.renderAllPagesForPdf();
+        jobs = canvases.map((c, i) => ({
+          name: `${base}_p${i + 1}.jpg`,
+          blob: pdfExport.toImageBlob(c, 'jpg', quality)
+        }));
+      } else if (format === 'png') {
+        jobs = [{ name: `${base}.png`, blob: pdfExport.toImageBlob(this.canvas, 'png', quality) }];
+      } else {
+        jobs = [{ name: `${base}.jpg`, blob: pdfExport.toImageBlob(this.canvas, 'jpg', quality) }];
+      }
+
+      this.showDlProgress(true, 60, t('downloadProgress'));
+      const usedFolder = await this.saveFiles(jobs);
+      this.showDlProgress(true, 100, t('downloadDone'));
+      this.showToast(usedFolder ? t('downloadDone') : t('folderFallback'), 'success');
+      this.toggleSheet('exportSheet', false);
+      setTimeout(() => this.showDlProgress(false), 800);
+    } catch (err) {
+      console.error('Export error:', err);
+      this.showDlProgress(false);
+      this.showToast(t('error') + ': ' + err.message, 'error');
+    }
   },
 
   async shareDoc() {
@@ -1405,69 +1724,218 @@ const app = {
     this.ctx.drawImage(page.originalImage, 0, 0, this.state.canvasWidth, this.state.canvasHeight);
   },
 
-  async showHistory() {
-    const historyList = document.getElementById('historyList');
-    historyList.innerHTML = '';
+  // ─── Home: session-based history ───
+  async refreshHome() {
     try {
-      const scans = await storage.getHistory();
-      scans.forEach(scan => {
-        const item = document.createElement('div');
-        item.className = 'history-item';
-        item.innerHTML = `
-          <img src="${scan.image}" alt="${this.escapeHtml(scan.name)}">
-          <div class="history-meta">
-            <span>${this.escapeHtml(scan.name)}</span><br>
-            <small>${new Date(scan.timestamp).toLocaleString()}</small>
-          </div>
-          <div class="history-actions">
-            <button data-action="load" aria-label="${t('loadScan')}"><i data-lucide="file-edit" aria-hidden="true"></i></button>
-            <button data-action="delete" aria-label="${t('deleteScan')}"><i data-lucide="trash-2" aria-hidden="true"></i></button>
-          </div>
-        `;
-        item.querySelector('[data-action="load"]').addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.loadImageFromSrc(scan.image);
-          document.getElementById('historyView').classList.add('hidden');
-        });
-        item.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (confirm(t('confirmDelete'))) {
-            storage.deleteScan(scan.id).then(() => this.showHistory());
-          }
-        });
-        historyList.appendChild(item);
-      });
-      lucide.createIcons();
-      document.getElementById('historyView').classList.remove('hidden');
+      this.state.sessionsCache = await storage.getSessions();
     } catch (err) {
       console.error(err);
-      this.showToast(t('error'));
+      this.state.sessionsCache = [];
+    }
+    if (!document.getElementById('historyView').classList.contains('hidden')) {
+      this.renderHome();
     }
   },
 
-  showToast(message, type = 'info') {
-    const existing = document.querySelector('.toast');
-    const delay = existing ? 200 : 0;
-    if (existing) {
-      existing.style.animation = 'toastOut 0.2s ease forwards';
-      setTimeout(() => existing.remove(), 200);
+  async showHome() {
+    await this.refreshHome();
+    camera.stop();
+    document.getElementById('emptyState')?.classList.add('hidden');
+    document.getElementById('editorArea')?.classList.add('hidden');
+    document.getElementById('bottomNav')?.classList.add('hidden'); // nav = edit-session only
+    document.getElementById('historyView').classList.remove('hidden');
+    this.setActiveNav('navHistory');
+    this.renderHome();
+  },
+
+  renderHome() {
+    const list = document.getElementById('historyList');
+    const empty = document.getElementById('historyEmpty');
+    if (!list) return;
+    const sessions = this.state.sessionsCache;
+    list.innerHTML = '';
+
+    if (sessions.length === 0) {
+      empty?.classList.remove('hidden');
+      lucide.createIcons({ root: document.getElementById('historyView') });
+      return;
     }
+    empty?.classList.add('hidden');
 
+    sessions.forEach((session) => {
+      const item = document.createElement('div');
+      item.className = 'history-item session-card';
+      if (session.id === this.state.activeSessionId) item.classList.add('active');
+      const cover = session.pages?.[0]?.image || '';
+      const count = session.pages?.length || 0;
+      item.innerHTML = `
+        <img src="${cover}" alt="${this.escapeHtml(session.name)}">
+        <div class="history-meta">
+          <span class="session-name">${this.escapeHtml(session.name)}</span>
+          <small class="session-info">${count} ${t('sessionPages')} · ${new Date(session.updatedAt).toLocaleString()}</small>
+        </div>
+        <div class="history-actions">
+          <button data-action="open" aria-label="${t('openSession')}"><i data-lucide="folder-open" aria-hidden="true"></i></button>
+          <button data-action="rename" aria-label="${t('renameSession')}"><i data-lucide="pencil" aria-hidden="true"></i></button>
+          <button data-action="delete" aria-label="${t('deleteSession')}"><i data-lucide="trash-2" aria-hidden="true"></i></button>
+        </div>
+      `;
+      item.querySelector('[data-action="open"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.requestOpenSession(session.id);
+      });
+      item.addEventListener('click', () => this.requestOpenSession(session.id));
+      item.querySelector('[data-action="rename"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const name = prompt(t('renameSession'), session.name);
+        if (name && name.trim()) this.emit('session:rename', { id: session.id, name: name.trim() });
+      });
+      item.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (confirm(t('confirmDeleteSession'))) this.emit('session:delete', { id: session.id });
+      });
+      list.appendChild(item);
+    });
+    lucide.createIcons({ root: list });
+  },
+
+  async showHistory() { return this.showHome(); }, // backward compat
+
+  requestOpenSession(id) {
+    if (this.state.pages.length > 0 && this.state.dirty) {
+      this.showSessionGuard(this.state.pages.length, { mode: 'open', id });
+      return;
+    }
+    this.emit('session:open', { id });
+  },
+
+  showSessionGuard(count, pending) {
+    this.state.pendingOpenSessionId = pending.id ?? null;
+    this._guardPending = pending;
+    const desc = document.getElementById('sessionGuardDesc');
+    if (desc) desc.textContent = t('sessionGuardDesc', count);
+    const modal = document.getElementById('sessionGuardModal');
+    modal.classList.remove('hidden');
+    modal.removeAttribute('inert');
+    lucide.createIcons({ root: modal });
+  },
+
+  closeSessionGuard() {
+    const modal = document.getElementById('sessionGuardModal');
+    modal.classList.add('hidden');
+    modal.setAttribute('inert', '');
+    this.state.pendingOpenSessionId = null;
+    this._guardPending = null;
+    this._pendingBatch = null;
+  },
+
+  async openSession(id) {
+    if (!id) return;
+    try {
+      const session = await storage.getSession(id);
+      if (!session) { this.showToast(t('error'), 'error'); return; }
+
+      // Load all pages; first rendered immediately, rest lazy via pendingSrc
+      this.state.pages = (session.pages || []).map((p) => ({
+        originalImage: null,
+        currentImageData: null,
+        name: p.name,
+        pendingSrc: p.image,
+        w: p.w,
+        h: p.h
+      }));
+      this.state.currentPageIndex = 0;
+      this.state.activeSessionId = session.id;
+      this.state.dirty = false;
+      this.state.undoStack = [];
+      this.state.redoStack = [];
+      this.updateUndoRedoUI();
+      this.resetFiltersSilent();
+      this.showEditor();
+      this.updatePagesTray();
+      this.renderPendingPage(0);
+      document.getElementById('historyView').classList.add('hidden');
+      this.setActiveNav(null);
+      this.showToast(t('sessionOpened'));
+    } catch (err) {
+      console.error('openSession error:', err);
+      this.showToast(t('error'), 'error');
+    }
+  },
+
+  resetFiltersSilent() {
+    this.state.filters = {
+      brightness: 0, contrast: 0, saturation: 0, sharpness: 0,
+      grayscale: false, sepia: false, invert: false, bw: false, threshold: 128
+    };
+    this.updateFilterUI();
+  },
+
+  startNewSession() {
+    this.state.pages = [];
+    this.state.currentPageIndex = -1;
+    this.state.activeSessionId = null;
+    this.state.dirty = false;
+    this.state.undoStack = [];
+    this.state.redoStack = [];
+    this.updateUndoRedoUI();
+    this.resetFiltersSilent();
+    document.getElementById('historyView').classList.add('hidden');
+    document.getElementById('editorArea')?.classList.add('hidden');
+    document.getElementById('bottomNav')?.classList.add('hidden');
+    document.getElementById('emptyState')?.classList.remove('hidden');
+    this.setActiveNav(null);
+  },
+
+  bindSessionGuard() {
+    const save = async () => {
+      const pending = this._guardPending;
+      const batch = this._pendingBatch;
+      this.closeSessionGuard();
+      if (!pending) return;
+      await this.emit('session:create', {});
+      if (pending.mode === 'open') this.openSession(pending.id);
+      else if (pending.mode === 'new') this.startNewSession();
+      else if (pending.mode === 'import' && batch) this._applyBatch(batch, []);
+    };
+    const discard = () => {
+      const pending = this._guardPending;
+      const batch = this._pendingBatch;
+      this.state.dirty = false;
+      this.closeSessionGuard();
+      if (!pending) return;
+      if (pending.mode === 'open') this.openSession(pending.id);
+      else if (pending.mode === 'new') this.startNewSession();
+      else if (pending.mode === 'import') {
+        this.state.pages = [];
+        this.state.activeSessionId = null;
+        if (batch) this._applyBatch(batch, []);
+      }
+    };
+    document.getElementById('guardSaveBtn')?.addEventListener('click', save);
+    document.getElementById('guardDiscardBtn')?.addEventListener('click', discard);
+    document.getElementById('guardCancelBtn')?.addEventListener('click', () => this.closeSessionGuard());
+    document.getElementById('closeSessionGuard')?.addEventListener('click', () => this.closeSessionGuard());
+    document.getElementById('sessionGuardBackdrop')?.addEventListener('click', () => this.closeSessionGuard());
+  },
+
+  showToast(message, type = 'info') {
+    // single toast slot: drop any existing immediately (avoids stacked/duplicate toasts)
+    document.querySelectorAll('.toast').forEach((el) => el.remove());
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'polite');
+    toast.textContent = message;
+    document.body.appendChild(toast);
+
+    // Adaptive timeout based on message length
+    const duration = Math.min(4000, Math.max(2000, message.length * 50));
     setTimeout(() => {
-      const toast = document.createElement('div');
-      toast.className = `toast toast-${type}`;
-      toast.setAttribute('role', 'alert');
-      toast.setAttribute('aria-live', 'polite');
-      toast.textContent = message;
-      document.body.appendChild(toast);
-
-      // Adaptive timeout based on message length
-      const duration = Math.min(4000, Math.max(2000, message.length * 50));
-      setTimeout(() => {
-        toast.style.animation = 'toastOut 0.2s ease forwards';
-        setTimeout(() => toast.remove(), 200);
-      }, duration);
-    }, delay);
+      toast.style.animation = 'toastOut 0.2s ease forwards';
+      setTimeout(() => toast.remove(), 200);
+    }, duration);
   },
 
   async autoEnhance() {
@@ -1843,7 +2311,7 @@ const app = {
   },
 
   // --- PDF Preview ---
-  showPdfPreview() {
+  async showPdfPreview() {
     if (this.state.pages.length === 0) return;
 
     const modal = document.getElementById('pdfPreviewModal');
@@ -1852,7 +2320,7 @@ const app = {
     const ctx = previewCanvas.getContext('2d');
 
     this._pdfPreviewIndex = 0;
-    this._pdfPreviewCanvases = this.renderAllPagesForPdf();
+    this._pdfPreviewCanvases = await this.renderAllPagesForPdf();
 
     // Show first page
     this.updatePdfPreview();
@@ -1881,16 +2349,31 @@ const app = {
       modal.setAttribute('inert', '');
     };
 
-    // Confirm export
-    document.getElementById('confirmPdfExport').onclick = () => {
+    // Confirm export → folder Scanner (fallback: browser download)
+    document.getElementById('confirmPdfExport').onclick = async () => {
       modal.classList.add('hidden');
       modal.setAttribute('inert', '');
       const qualitySlider = document.getElementById('exportQuality');
       const quality = qualitySlider ? parseInt(qualitySlider.value) / 100 : 0.85;
-      pdfExport.exportToPdf(this._pdfPreviewCanvases, quality).then(() => {
-        this.showToast(t('saved'));
-        storage.saveScan(this.canvas, 'multi_scan_' + Date.now()).catch(console.warn);
-      });
+      const base = `${this.sessionLabel()}_${new Date().toISOString().slice(0, 10)}`;
+      this.toggleSheet('exportSheet', true);
+      this.showDlProgress(true, 20, t('downloadProgress'));
+      try {
+        const blob = await pdfExport.toPdfBlob(this._pdfPreviewCanvases, quality);
+        const usedFolder = await this.saveFiles([{ name: `${base}.pdf`, blob }]);
+        this.showDlProgress(true, 100, t('downloadDone'));
+        this.showToast(usedFolder ? t('downloadDone') : t('folderFallback'), 'success');
+        this.emit('session:create', {});
+        setTimeout(() => {
+          this.showDlProgress(false);
+          this.toggleSheet('exportSheet', false);
+        }, 900);
+      } catch (err) {
+        console.error('PDF export error:', err);
+        this.showDlProgress(false);
+        this.toggleSheet('exportSheet', false);
+        this.showToast(t('error'), 'error');
+      }
     };
 
     modal.classList.remove('hidden');
@@ -1924,10 +2407,21 @@ const app = {
     document.getElementById('pdfPreviewSize').textContent = sizeText;
   },
 
-  renderAllPagesForPdf() {
+  async renderAllPagesForPdf() {
     const filters = this.state.filters;
-    return this.state.pages.map(page => {
-      const img = page.originalImage;
+    const loadPage = async (page) => {
+      let img = page.originalImage;
+      if (!img && page.pendingSrc) {
+        img = await new Promise((res, rej) => {
+          const i = new Image();
+          i.onload = () => res(i);
+          i.onerror = rej;
+          i.src = page.pendingSrc;
+        });
+        page.originalImage = img;
+        page.pendingSrc = null;
+      }
+      if (!img) return null;
       const tempCanvas = document.createElement('canvas');
       const w = img.naturalWidth || img.width;
       const h = img.naturalHeight || img.height;
@@ -1955,7 +2449,9 @@ const app = {
         tempCtx.putImageData(imageData, 0, 0);
       }
       return tempCanvas;
-    });
+    };
+    const canvases = await Promise.all(this.state.pages.map(loadPage));
+    return canvases.filter(Boolean);
   }
 };
 

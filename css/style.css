@@ -163,6 +163,45 @@ html, body {
   outline-offset: 1px;
 }
 
+.lang-picker {
+  position: relative;
+}
+
+.lang-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 148px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  z-index: 70;
+  overflow: hidden;
+}
+
+.lang-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lang-menu button:hover {
+  background: var(--color-muted);
+}
+
+.lang-menu button[aria-selected='true'] {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
 /* Sleek Icon Buttons */
 .icon-btn {
   display: flex;
@@ -2139,4 +2178,167 @@ html, body {
 .flash-btn i, .flash-btn svg {
   width: 18px;
   height: 18px;
+}
+
+/* ─── App Shell: Offline Badge ────────────────────────────────── */
+.offline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-warning);
+  background: rgba(217, 119, 6, 0.1);
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  border-radius: var(--radius-full);
+  padding: 3px 10px;
+}
+.offline-badge i, .offline-badge svg { width: 12px; height: 12px; }
+
+/* ─── Home: Session Cards ─────────────────────────────────────── */
+.history-header-actions { display: flex; align-items: center; gap: 8px; }
+.btn-sm { font-size: 12px; padding: 6px 12px; }
+
+.session-card { cursor: pointer; position: relative; }
+.session-card.active { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.session-card .session-name {
+  display: block;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+.session-card .session-info { display: block; margin-top: 3px; }
+.session-card::after {
+  content: attr(data-count);
+}
+
+.history-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 48px 24px;
+  gap: 8px;
+}
+.history-empty h2 { font-size: 17px; color: var(--color-text); }
+.history-empty p { font-size: 13px; color: var(--color-text-secondary); max-width: 320px; line-height: 1.5; }
+.history-empty .empty-icon { width: 40px; height: 40px; color: var(--color-text-tertiary); margin-bottom: 4px; }
+
+/* ─── Download Center ─────────────────────────────────────────── */
+.dl-preview-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  scrollbar-width: thin;
+}
+.dl-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 56px;
+  height: 74px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 2px solid var(--color-border);
+  cursor: pointer;
+  background: var(--color-muted);
+}
+.dl-thumb.active { border-color: var(--color-accent); }
+.dl-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dl-thumb span {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+}
+
+.dl-folder-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px dashed var(--color-border-hover);
+  border-radius: var(--radius-md);
+  background: var(--color-muted);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+  margin-bottom: 12px;
+}
+.dl-folder-btn:hover { border-color: var(--color-accent); background: var(--color-accent-light); }
+.dl-folder-btn i, .dl-folder-btn svg { width: 22px; height: 22px; color: var(--color-accent); flex-shrink: 0; }
+.dl-folder-btn strong { display: block; font-size: 13px; color: var(--color-text); }
+.dl-folder-btn small { display: block; font-size: 11px; color: var(--color-text-secondary); margin-top: 2px; font-family: monospace; }
+
+.dl-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.dl-card {
+  flex-direction: column;
+  align-items: flex-start !important;
+  gap: 8px !important;
+  padding: 14px 12px !important;
+  border-radius: var(--radius-md) !important;
+  min-height: 96px;
+}
+.dl-card i, .dl-card svg { width: 24px; height: 24px; color: var(--color-accent); }
+.dl-card strong { font-size: 13px; }
+.dl-card small { font-size: 11px; line-height: 1.35; }
+
+.dl-progress { margin-top: 14px; }
+.dl-progress-bar {
+  height: 6px;
+  background: var(--color-muted);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+.dl-progress-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--color-accent), #60A5FA);
+  border-radius: var(--radius-full);
+  transition: width 0.25s ease;
+}
+.dl-progress #dlProgressText {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.dl-save-btn { width: 100%; margin-top: 14px; }
+
+/* ─── Session Guard Modal ─────────────────────────────────────── */
+.session-guard-content { max-width: 380px; }
+.session-guard-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 20px 8px;
+  text-align: center;
+}
+.session-guard-icon { width: 36px; height: 36px; color: var(--color-warning); }
+.session-guard-body p { font-size: 14px; line-height: 1.5; color: var(--color-text-secondary); }
+.session-guard-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 20px 20px;
+}
+.session-guard-actions .btn { width: 100%; justify-content: center; }
+
+@media (max-width: 400px) {
+  .dl-grid { grid-template-columns: 1fr; }
 }

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+const { test, expect } = require('@playwright/test');
 
 test('has title', async ({ page }) => {
   await page.goto('/');
@@ -20,8 +20,25 @@ test('editor is hidden initially', async ({ page }) => {
   await expect(page.locator('#cameraView')).toHaveClass(/hidden/);
 });
 
-test('bottom nav hidden until image loaded', async ({ page }) => {
+test('bottom nav hidden on home, visible in edit session', async ({ page }) => {
   await page.goto('/');
+  await expect(page.locator('#bottomNav')).toHaveClass(/hidden/);
+
+  const pngBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  await page.locator('#fileInput').setInputFiles({
+    name: 'nav_test.png',
+    mimeType: 'image/png',
+    buffer: pngBuffer,
+  });
+  await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/, { timeout: 8000 });
+  await expect(page.locator('#bottomNav')).not.toHaveClass(/hidden/);
+
+  // back to home → nav hides again
+  await page.locator('#navHistory').click();
+  await expect(page.locator('#historyView')).not.toHaveClass(/hidden/);
   await expect(page.locator('#bottomNav')).toHaveClass(/hidden/);
 });
 
@@ -85,16 +102,31 @@ test('dark mode toggle works', async ({ page }) => {
   await expect(body).not.toHaveClass(/dark-mode/);
 });
 
-test('language switcher has both language options', async ({ page }) => {
+test('language switcher shows compact ID/ENG, full labels in menu', async ({ page }) => {
   await page.goto('/');
   const switcher = page.locator('#langSwitcher');
+  const menu = page.locator('#langMenu');
 
+  // Closed state: compact label only
   await expect(switcher).toBeVisible();
-  const options = await switcher.locator('option').allTextContents();
-  expect(options.some(o => o.includes('Indonesia'))).toBeTruthy();
-  expect(options.some(o => o.includes('English'))).toBeTruthy();
+  await expect(switcher).toHaveText('ID/ENG');
+  await expect(menu).toHaveClass(/hidden/);
 
-  await expect(switcher).toHaveValue('en');
+  // Open: full labels listed
+  await switcher.click();
+  await expect(menu).not.toHaveClass(/hidden/);
+  await expect(menu.locator('[data-lang="id"]')).toHaveText('ID Indonesia');
+  await expect(menu.locator('[data-lang="en"]')).toHaveText('Eng English');
+
+  // Select ID → applies + menu closes
+  await menu.locator('[data-lang="id"]').click();
+  await expect(menu).toHaveClass(/hidden/);
+  await expect(page.locator('h2[data-i18n="emptyTitle"]')).toHaveText('Belum ada dokumen');
+
+  // Reopen → aria-selected reflects active lang
+  await switcher.click();
+  await expect(menu.locator('[data-lang="id"]')).toHaveAttribute('aria-selected', 'true');
+  await expect(menu.locator('[data-lang="en"]')).toHaveAttribute('aria-selected', 'false');
 });
 
 test('tools sheet opens and closes', async ({ page }) => {
@@ -163,6 +195,8 @@ test('multiple image imports create pages', async ({ page }) => {
   });
   await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/, { timeout: 8000 });
   await expect(page.locator('.page-thumb')).toHaveCount(1);
+  // wait for first session save so second import appends (not guarded)
+  await page.waitForFunction(() => app.state.dirty === false, null, { timeout: 5000 });
 
   await page.locator('#fileInput').setInputFiles({
     name: 'test2.png',

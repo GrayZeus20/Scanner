@@ -6,6 +6,10 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+.playwright-mcp/
+
+# Wrangler local cache
+worker/.wrangler/
 
 # Local dev output & stray test files
 initial-state.png
@@ -13,6 +17,8 @@ test-dummy.png
 localhost.json
 localhost.md
 test.js
+tests/
+tests-results/
 
 # Logs
 *.log

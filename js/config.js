@@ -6,8 +6,7 @@ const config = {
   },
   STORAGE: {
     dbName: 'WebScannerDB',
-    storeName: 'scans',
-    version: 1
+    version: 2
   },
   OCR: {
     timeout: 60000,
@@ -21,5 +20,8 @@ const config = {
   },
   CAMERA: {
     metadataTimeout: 5000
+  },
+  DOWNLOAD: {
+    dirName: 'Scanner'
   }
 };

@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="description" content="Web-based document scanner with camera capture, auto edge detection, filters, OCR, and PDF export.">
   <meta name="theme-color" content="#2563EB">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="WebScanner">
   <title>WebScanner</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,8 +20,8 @@
   <meta property="og:description" content="Web document scanner dengan deteksi sudut otomatis, filter, OCR lokal, dan ekspor PDF 100% offline di perangkat.">
   <meta property="og:image" content="icons/icon-512.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="css/style.css?v=14">
-  <link rel="stylesheet" href="css/dark-mode.css?v=14">
+  <link rel="stylesheet" href="css/style.css?v=15">
+  <link rel="stylesheet" href="css/dark-mode.css?v=15">
   <link rel="manifest" href="manifest.json">
   <script src="https://unpkg.com/lucide@0.460.0"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" async></script>
@@ -38,6 +39,7 @@
         </div>
       </div>
         <div class="header-right">
+          <span id="offlineBadge" class="offline-badge hidden" role="status"><i data-lucide="wifi-off" aria-hidden="true"></i><span data-i18n="offlineBadge">Offline</span></span>
           <button id="pwaInstallBtn" class="pwa-install-btn hidden" title="Pasang Aplikasi PWA" aria-label="Install App">
             <i data-lucide="download-cloud" aria-hidden="true"></i>
             <span class="pwa-install-text" data-i18n="installApp">Pasang App</span>
@@ -48,11 +50,13 @@
           <button id="redoBtn" class="icon-btn" title="Redo" disabled>
             <i data-lucide="redo-2" aria-hidden="true"></i>
           </button>
-          <label for="langSwitcher" class="visually-hidden">Language</label>
-          <select id="langSwitcher" class="lang-select">
-            <option value="id">ID Indonesia</option>
-            <option value="en">Eng English</option>
-          </select>
+          <div class="lang-picker">
+            <button id="langSwitcher" class="lang-select" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Language">ID/ENG</button>
+            <div id="langMenu" class="lang-menu hidden" role="listbox" aria-label="Language">
+              <button type="button" data-lang="id" role="option">ID Indonesia</button>
+              <button type="button" data-lang="en" role="option">Eng English</button>
+            </div>
+          </div>
           <button id="darkToggle" class="icon-btn" title="Toggle Dark Mode">
             <i data-lucide="moon"></i>
           </button>
@@ -61,13 +65,21 @@
 
     <!-- Main Content -->
     <main id="main">
-      <!-- History View -->
+      <!-- Home / Session History View -->
       <div id="historyView" class="hidden">
         <div class="history-header">
-          <h3 data-i18n="history">Riwayat Scan</h3>
-          <button id="closeHistory" class="icon-btn" aria-label="Close History"><i data-lucide="x" aria-hidden="true"></i></button>
+          <h3 data-i18n="home">Beranda</h3>
+          <div class="history-header-actions">
+            <button id="newSessionBtn" class="btn btn-secondary btn-sm"><i data-lucide="plus" aria-hidden="true"></i><span data-i18n="newSession">Sesi Baru</span></button>
+            <button id="closeHistory" class="icon-btn" aria-label="Close History"><i data-lucide="x" aria-hidden="true"></i></button>
+          </div>
         </div>
         <div id="historyList" class="history-list"></div>
+        <div id="historyEmpty" class="history-empty hidden">
+          <i data-lucide="layers" class="empty-icon" aria-hidden="true"></i>
+          <h2 data-i18n="sessionEmpty">Belum ada sesi scan</h2>
+          <p data-i18n="sessionEmptyDesc">Ambil foto atau impor file — semua gambar dalam satu sesi disimpan otomatis di sini</p>
+        </div>
       </div>
 
       <!-- Preview Area -->
@@ -84,10 +96,6 @@
             <button id="emptyImport" class="btn btn-secondary">
               <i data-lucide="upload" aria-hidden="true"></i>
               <span data-i18n="importFile">Impor File</span>
-            </button>
-            <button id="emptyInstallBtn" class="btn btn-secondary btn-install-empty hidden" title="Pasang Aplikasi">
-              <i data-lucide="download-cloud" aria-hidden="true"></i>
-              <span data-i18n="installApp">Pasang Aplikasi</span>
             </button>
           </div>
         </div>
@@ -492,63 +500,103 @@
       </div>
     </div>
 
-    <!-- Export Sheet Panel -->
+    <!-- Download Center Sheet -->
     <div id="exportSheet" class="sheet-panel hidden" role="dialog" aria-modal="true" aria-label="Export">
       <div class="sheet-header">
-        <h3 data-i18n="export">Simpan</h3>
+        <h3 data-i18n="downloadCenter">Unduhan</h3>
         <button id="closeExportSheet" class="icon-btn" data-i18n-aria="close">
           <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </div>
       <div class="sheet-body">
+        <div class="dl-preview-strip" id="dlPreviewStrip" aria-label="Pages preview"></div>
+        <div class="dl-folder-row">
+          <button id="pickFolderBtn" class="dl-folder-btn" type="button">
+            <i data-lucide="folder" aria-hidden="true"></i>
+            <div>
+              <strong data-i18n="pickFolder">Pilih folder unduhan</strong>
+              <small id="folderStatus">Scanner/</small>
+            </div>
+          </button>
+        </div>
         <div class="filter-group">
           <label for="exportQuality" data-i18n="compressionQuality">Kualitas Kompresi</label>
           <input type="range" id="exportQuality" min="10" max="100" value="85" class="filter-slider">
           <span id="exportQualityVal" class="filter-val">85%</span>
         </div>
         <div class="filter-divider"></div>
-        <button class="export-btn" data-format="pdf">
-          <i data-lucide="file-text" aria-hidden="true"></i>
-          <div>
-            <strong data-i18n="exportPdf">PDF</strong>
-            <small data-i18n="exportPdfDesc">Simpan sebagai dokumen PDF</small>
-          </div>
+        <div class="dl-grid">
+          <button class="export-btn dl-card" data-format="pdf">
+            <i data-lucide="file-text" aria-hidden="true"></i>
+            <div>
+              <strong data-i18n="exportPdf">PDF</strong>
+              <small data-i18n="exportPdfDesc">Simpan sebagai dokumen PDF</small>
+            </div>
+          </button>
+          <button class="export-btn dl-card" data-format="png">
+            <i data-lucide="image" aria-hidden="true"></i>
+            <div>
+              <strong data-i18n="exportPng">PNG</strong>
+              <small data-i18n="exportPngDesc">Gambar berkualitas tinggi</small>
+            </div>
+          </button>
+          <button class="export-btn dl-card" data-format="jpg">
+            <i data-lucide="image" aria-hidden="true"></i>
+            <div>
+              <strong data-i18n="exportJpg">JPG</strong>
+              <small data-i18n="exportJpgDesc">Ukuran file lebih kecil</small>
+            </div>
+          </button>
+          <button class="export-btn dl-card" data-format="batchPdf">
+            <i data-lucide="files" aria-hidden="true"></i>
+            <div>
+              <strong data-i18n="exportBatchPdf">Semua Halaman (PDF)</strong>
+              <small data-i18n="exportBatchPdfDesc">Simpan semua halaman sebagai PDF</small>
+            </div>
+          </button>
+          <button class="export-btn dl-card" data-format="batchJpg">
+            <i data-lucide="images" aria-hidden="true"></i>
+            <div>
+              <strong data-i18n="exportBatchJpg">Semua Halaman (JPG)</strong>
+              <small data-i18n="exportBatchJpgDesc">Simpan semua gambar</small>
+            </div>
+          </button>
+          <button class="export-btn dl-card" id="shareBtn">
+            <i data-lucide="share-2" aria-hidden="true"></i>
+            <div>
+              <strong data-i18n="share">Share</strong>
+              <small data-i18n="shareDesc">Bagikan dokumen</small>
+            </div>
+          </button>
+        </div>
+        <div id="dlProgress" class="dl-progress hidden">
+          <div class="dl-progress-bar"><div id="dlProgressFill" class="dl-progress-fill"></div></div>
+          <span id="dlProgressText" data-i18n="downloadProgress">Menyimpan...</span>
+        </div>
+        <button id="saveToFolderBtn" class="btn btn-primary dl-save-btn" type="button">
+          <i data-lucide="download" aria-hidden="true"></i>
+          <span data-i18n="saveToFolder">Simpan ke folder Scanner</span>
         </button>
-        <button class="export-btn" data-format="png">
-          <i data-lucide="image" aria-hidden="true"></i>
-          <div>
-            <strong data-i18n="exportPng">PNG</strong>
-            <small data-i18n="exportPngDesc">Gambar berkualitas tinggi</small>
-          </div>
-        </button>
-        <button class="export-btn" data-format="jpg">
-          <i data-lucide="image" aria-hidden="true"></i>
-          <div>
-            <strong data-i18n="exportJpg">JPG</strong>
-            <small data-i18n="exportJpgDesc">Ukuran file lebih kecil</small>
-          </div>
-        </button>
-        <button class="export-btn" data-format="batchPdf">
-          <i data-lucide="files" aria-hidden="true"></i>
-          <div>
-            <strong data-i18n="exportBatchPdf">Semua Halaman (PDF)</strong>
-            <small data-i18n="exportBatchPdfDesc">Simpan semua halaman sebagai PDF</small>
-          </div>
-        </button>
-        <button class="export-btn" data-format="batchJpg">
-          <i data-lucide="images" aria-hidden="true"></i>
-          <div>
-            <strong data-i18n="exportBatchJpg">Semua Halaman (JPG)</strong>
-            <small data-i18n="exportBatchJpgDesc">Simpan semua gambar</small>
-          </div>
-        </button>
-        <button class="export-btn" id="shareBtn">
-          <i data-lucide="share-2" aria-hidden="true"></i>
-          <div>
-            <strong data-i18n="share">Share</strong>
-            <small data-i18n="shareDesc">Bagikan dokumen</small>
-          </div>
-        </button>
+      </div>
+    </div>
+
+    <!-- Session Guard Modal (unsaved work warning) -->
+    <div id="sessionGuardModal" class="pdf-preview-modal hidden" role="dialog" aria-modal="true" aria-label="Unsaved work" inert>
+      <div class="pdf-preview-backdrop" id="sessionGuardBackdrop"></div>
+      <div class="pdf-preview-content session-guard-content">
+        <div class="pdf-preview-header">
+          <h3 data-i18n="sessionGuardTitle">Ada pekerjaan belum disimpan</h3>
+          <button id="closeSessionGuard" class="icon-btn" aria-label="Close"><i data-lucide="x" aria-hidden="true"></i></button>
+        </div>
+        <div class="session-guard-body">
+          <i data-lucide="triangle-alert" class="session-guard-icon" aria-hidden="true"></i>
+          <p id="sessionGuardDesc">Ada gambar terbuka saat ini.</p>
+        </div>
+        <div class="session-guard-actions">
+          <button id="guardSaveBtn" class="btn btn-primary"><i data-lucide="save" aria-hidden="true"></i><span data-i18n="sessionGuardSave">Simpan & Buka</span></button>
+          <button id="guardDiscardBtn" class="btn btn-danger"><i data-lucide="trash-2" aria-hidden="true"></i><span data-i18n="sessionGuardDiscard">Buang & Buka</span></button>
+          <button id="guardCancelBtn" class="btn btn-secondary"><span data-i18n="sessionGuardCancel">Batal</span></button>
+        </div>
       </div>
     </div>
 
@@ -567,6 +615,7 @@
   <script src="js/manual-crop.js"></script>
   <script src="js/pdf-export.js"></script>
   <script src="js/storage.js"></script>
+  <script src="js/deepscan.js"></script>
   <script src="js/ocr.js"></script>
   <script src="js/inpaint.js"></script>
   <script src="js/app.js"></script>

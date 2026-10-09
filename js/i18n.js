@@ -125,6 +125,38 @@ const i18n = {
     hdDone: 'Dokumen berhasil di-upscale ke kualitas HD!',
     themeToggle: 'Mode Gelap / Terang',
     themeToggleDesc: 'Beralih tampilan antara mode gelap dan terang',
+    home: 'Beranda',
+    sessions: 'Sesi',
+    newSession: 'Sesi Baru',
+    sessionEmpty: 'Belum ada sesi scan',
+    sessionEmptyDesc: 'Ambil foto atau impor file — semua gambar dalam satu sesi disimpan otomatis di sini',
+    sessionPages: 'gambar',
+    openSession: 'Buka Sesi',
+    deleteSession: 'Hapus Sesi',
+    renameSession: 'Ganti Nama Sesi',
+    confirmDeleteSession: 'Hapus sesi beserta semua isinya?',
+    sessionGuardTitle: 'Ada pekerjaan belum disimpan',
+    sessionGuardDesc: (count) => `${count} gambar terbuka saat ini. Buka sesi lain akan menutupnya.`,
+    sessionGuardSave: 'Simpan & Buka',
+    sessionGuardDiscard: 'Buang & Buka',
+    sessionGuardCancel: 'Batal',
+    sessionSaved: 'Sesi disimpan',
+    sessionOpened: 'Sesi dibuka',
+    sessionFull: 'Sesi penuh (maksimal 30 gambar)',
+    unsupportedFile: 'File tidak didukung. Gunakan gambar PNG/JPG/WEBP/GIF.',
+    fileTooLarge: 'File terlalu besar (maksimal 15 MB)',
+    pdfNotSupported: 'PDF belum didukung — ekspor ke gambar dulu',
+    batchErrors: (n) => `${n} file gagal diproses`,
+    downloadCenter: 'Unduhan',
+    saveToFolder: 'Simpan ke folder Scanner',
+    pickFolder: 'Pilih folder unduhan',
+    folderPicked: 'Folder Scanner terpilih',
+    folderFallback: 'Browser tidak mendukung folder — file prefix Scanner-',
+    downloadProgress: 'Menyimpan...',
+    downloadDone: 'File tersimpan di folder Scanner',
+    pagesLabel: 'halaman',
+    noPagesYet: 'Belum ada halaman untuk diunduh',
+    offlineBadge: 'Offline',
   },
 
   en: {
@@ -253,6 +285,38 @@ const i18n = {
     hdDone: 'Document successfully upscaled to HD quality!',
     themeToggle: 'Dark / Light Mode',
     themeToggleDesc: 'Switch between dark and light appearance',
+    home: 'Home',
+    sessions: 'Sessions',
+    newSession: 'New Session',
+    sessionEmpty: 'No scan sessions yet',
+    sessionEmptyDesc: 'Take a photo or import files — all images in one session are saved here automatically',
+    sessionPages: 'images',
+    openSession: 'Open Session',
+    deleteSession: 'Delete Session',
+    renameSession: 'Rename Session',
+    confirmDeleteSession: 'Delete this session and all its contents?',
+    sessionGuardTitle: 'Unsaved work in progress',
+    sessionGuardDesc: (count) => `${count} images are currently open. Opening another session will close them.`,
+    sessionGuardSave: 'Save & Open',
+    sessionGuardDiscard: 'Discard & Open',
+    sessionGuardCancel: 'Cancel',
+    sessionSaved: 'Session saved',
+    sessionOpened: 'Session opened',
+    sessionFull: 'Session full (max 30 images)',
+    unsupportedFile: 'Unsupported file. Use PNG/JPG/WEBP/GIF images.',
+    fileTooLarge: 'File too large (max 15 MB)',
+    pdfNotSupported: 'PDF not supported yet — export to image first',
+    batchErrors: (n) => `${n} file(s) failed to process`,
+    downloadCenter: 'Downloads',
+    saveToFolder: 'Save to Scanner folder',
+    pickFolder: 'Pick download folder',
+    folderPicked: 'Scanner folder selected',
+    folderFallback: 'Browser does not support folders — files prefixed Scanner-',
+    downloadProgress: 'Saving...',
+    downloadDone: 'Files saved to Scanner folder',
+    pagesLabel: 'pages',
+    noPagesYet: 'No pages to download yet',
+    offlineBadge: 'Offline',
   },
 };
 
@@ -288,8 +352,9 @@ function setLanguage(lang) {
   });
 }
 
-function t(key) {
-  return i18n[currentLang][key] || i18n['id'][key] || key;
+function t(key, ...args) {
+  const v = i18n[currentLang][key] ?? i18n['id'][key] ?? key;
+  return typeof v === 'function' ? v(...args) : v;
 }
 
 function detectLanguage() {

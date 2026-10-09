@@ -227,6 +227,8 @@ const camera = {
   finish() {
     if (this.capturedCount > 0) {
       app.showToast(this.capturedCount + ' ' + t('photoCount'));
+      // One camera burst = one session
+      app.emit('session:create', {});
     }
     this.resetCameraUI();
     this.stop();
@@ -476,6 +478,7 @@ const camera = {
       document.getElementById('bottomNav')?.classList.remove('hidden');
     } else {
       document.getElementById('emptyState')?.classList.remove('hidden');
+      document.getElementById('bottomNav')?.classList.add('hidden');
     }
   },
 

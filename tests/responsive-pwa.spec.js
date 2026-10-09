@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+const { test, expect } = require('@playwright/test');
 
 test.describe('Responsive Layout & PWA Suite', () => {
 
@@ -149,13 +149,12 @@ test.describe('Responsive Layout & PWA Suite', () => {
       window.dispatchEvent(event);
     });
 
-    // PWA install button in header should become visible
+    // PWA install button in header should become visible (single install entry)
     const pwaBtn = page.locator('#pwaInstallBtn');
     await expect(pwaBtn).toBeVisible();
     await expect(pwaBtn).toContainText(/Pasang|Install/);
 
-    // Empty state install button should also be visible
-    const emptyInstallBtn = page.locator('#emptyInstallBtn');
-    await expect(emptyInstallBtn).toBeVisible();
+    // No duplicate install button in empty state
+    await expect(page.locator('#emptyInstallBtn')).toHaveCount(0);
   });
 });
