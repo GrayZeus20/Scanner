@@ -225,4 +225,101 @@ test.describe('Document Crop & Auto Crop Suite', () => {
     await page.locator('#confirmCropBtn').click();
     await expect(page.locator('#cropOverlay')).toHaveClass(/hidden/);
   });
+
+  test('titik pas dots sit exactly on each crop corner', async ({ page }) => {
+    await loadTestDocument(page);
+
+    await page.locator('#navTools').click();
+    await page.locator('#toolManualCropBtn').click();
+    await expect(page.locator('#cropOverlay')).not.toHaveClass(/hidden/);
+
+    // 4 dots visible, positions match corner coords exactly
+    for (const id of ['cropDotTl', 'cropDotTr', 'cropDotBl', 'cropDotBr']) {
+      await expect(page.locator('#' + id)).toBeVisible();
+    }
+
+    const match = await page.evaluate(() => {
+      const c = manualCrop.state.corners;
+      const pairs = [
+        ['cropDotTl', c.tl],
+        ['cropDotTr', c.tr],
+        ['cropDotBl', c.bl],
+        ['cropDotBr', c.br],
+      ];
+      return pairs.map(([id, corner]) => {
+        const dot = document.getElementById(id);
+        return Math.abs(parseFloat(dot.getAttribute('cx')) - corner.x) < 0.01 &&
+               Math.abs(parseFloat(dot.getAttribute('cy')) - corner.y) < 0.01;
+      }).every(Boolean);
+    });
+    expect(match).toBe(true);
+
+    // Drag TL corner — dot must follow the live corner
+    const tlHandle = page.locator('.crop-handle[data-handle="tl"]');
+    const box = await tlHandle.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2 + 50, { steps: 5 });
+    await page.mouse.up();
+
+    const stillMatches = await page.evaluate(() => {
+      const c = manualCrop.state.corners.tl;
+      const dot = document.getElementById('cropDotTl');
+      return Math.abs(parseFloat(dot.getAttribute('cx')) - c.x) < 0.01 &&
+             Math.abs(parseFloat(dot.getAttribute('cy')) - c.y) < 0.01;
+    });
+    expect(stillMatches).toBe(true);
+  });
+
+  test('handles and magnifier stay inside wrapper when dragged to the edge', async ({ page }) => {
+    await loadTestDocument(page);
+
+    await page.locator('#navTools').click();
+    await page.locator('#toolManualCropBtn').click();
+    await expect(page.locator('#cropOverlay')).not.toHaveClass(/hidden/);
+
+    // Drag TL handle far past the top-left corner of the viewport
+    const tlHandle = page.locator('.crop-handle[data-handle="tl"]');
+    const box = await tlHandle.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x - 300, box.y - 300, { steps: 8 });
+
+    // During drag: every handle's box must remain within the wrapper's box
+    const inBounds = await page.evaluate(() => {
+      const wr = document.getElementById('canvasWrapper').getBoundingClientRect();
+      return [...document.querySelectorAll('.crop-handle')].every((h) => {
+        const b = h.getBoundingClientRect();
+        return b.left >= wr.left - 1 && b.top >= wr.top - 1 &&
+               b.right <= wr.right + 1 && b.bottom <= wr.bottom + 1;
+      });
+    });
+    expect(inBounds).toBe(true);
+
+    // Corner itself clamped to visible canvas ∩ wrapper (never escapes)
+    const cornerClamped = await page.evaluate(() => {
+      const c = manualCrop.state.corners.tl;
+      const wr = document.getElementById('canvasWrapper').getBoundingClientRect();
+      const cr = document.getElementById('mainCanvas').getBoundingClientRect();
+      const minX = Math.max(0, cr.left - wr.left);
+      const minY = Math.max(0, cr.top - wr.top);
+      const maxX = Math.min(wr.width, cr.right - wr.left);
+      const maxY = Math.min(wr.height, cr.bottom - wr.top);
+      return c.x >= minX - 0.5 && c.y >= minY - 0.5 && c.x <= maxX + 0.5 && c.y <= maxY + 0.5;
+    });
+    expect(cornerClamped).toBe(true);
+
+    // Magnifier (visible during corner drag) also within wrapper
+    const magInBounds = await page.evaluate(() => {
+      const wr = document.getElementById('canvasWrapper').getBoundingClientRect();
+      const mag = document.getElementById('cropMagnifier');
+      if (mag.style.display !== 'block') return true; // hidden — skip
+      const b = mag.getBoundingClientRect();
+      return b.left >= wr.left - 1 && b.top >= wr.top - 1 &&
+             b.right <= wr.right + 1 && b.bottom <= wr.bottom + 1;
+    });
+    expect(magInBounds).toBe(true);
+
+    await page.mouse.up();
+  });
 });

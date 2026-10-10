@@ -376,3 +376,118 @@ test('local inpaint / object eraser opens and cancels cleanly', async ({ page })
   await expect(page.locator('#inpaintActionBar')).toHaveClass(/hidden/);
 });
 
+test('home shows riwayat button that opens session history', async ({ page }) => {
+  await page.goto('/');
+  const homeRiwayat = page.locator('#homeHistoryBtn');
+  await expect(homeRiwayat).toBeVisible();
+
+  await homeRiwayat.click();
+  await expect(page.locator('#historyView')).not.toHaveClass(/hidden/);
+  await expect(page.locator('#emptyState')).toHaveClass(/hidden/);
+
+  // close history (no open pages) → back to home surface
+  await page.locator('#closeHistory').click();
+  await expect(page.locator('#emptyState')).not.toHaveClass(/hidden/);
+  await expect(page.locator('#historyView')).toHaveClass(/hidden/);
+});
+
+test('back-to-home warns on unsaved data, cancel stays in editor, discard goes home', async ({ page }) => {
+  await page.goto('/');
+  const pngBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  await page.locator('#fileInput').setInputFiles({
+    name: 'backhome_test.png',
+    mimeType: 'image/png',
+    buffer: pngBuffer,
+  });
+  await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/, { timeout: 8000 });
+  await expect(page.locator('#homeBackBtn')).toBeVisible();
+
+  // mark unsaved edits (filter/crop/reorder would do the same)
+  await page.evaluate(() => { app.state.dirty = true; });
+  await page.locator('#homeBackBtn').click();
+
+  // warning modal with home-specific labels
+  await expect(page.locator('#sessionGuardModal')).not.toHaveClass(/hidden/);
+  await expect(page.locator('#guardSaveBtn [data-i18n="sessionGuardSaveHome"]')).toBeVisible();
+  await expect(page.locator('#guardDiscardBtn [data-i18n="sessionGuardDiscardHome"]')).toBeVisible();
+
+  // cancel → stay in editor
+  await page.locator('#guardCancelBtn').click();
+  await expect(page.locator('#sessionGuardModal')).toHaveClass(/hidden/);
+  await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/);
+
+  // back again → discard → home surface, back button hidden
+  await page.locator('#homeBackBtn').click();
+  await page.locator('#guardDiscardBtn').click();
+  await expect(page.locator('#emptyState')).not.toHaveClass(/hidden/);
+  await expect(page.locator('#historyView')).toHaveClass(/hidden/);
+  await expect(page.locator('#homeBackBtn')).toHaveClass(/hidden/);
+});
+
+test('undo and redo are locked while an import is running', async ({ page }) => {
+  await page.goto('/');
+  const result = await page.evaluate(async () => {
+    app.state.undoStack.push({ fake: true });
+    app._importing = true;
+    app.syncUndoRedoLock();
+    const disabledWhileImporting = document.getElementById('undoBtn').disabled && document.getElementById('redoBtn').disabled;
+    const lenBefore = app.state.undoStack.length;
+    await app.undo();
+    const lenAfter = app.state.undoStack.length;
+    app._importing = false;
+    app.syncUndoRedoLock();
+    const enabledAfter = !document.getElementById('undoBtn').disabled;
+    return { disabledWhileImporting, unchanged: lenBefore === lenAfter, enabledAfter };
+  });
+  expect(result.disabledWhileImporting).toBe(true);
+  expect(result.unchanged).toBe(true);
+  expect(result.enabledAfter).toBe(true);
+});
+
+test('folder permission helper explains before browser picker', async ({ page }) => {
+  await page.goto('/');
+
+  const pngBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  await page.locator('#fileInput').setInputFiles({
+    name: 'perm_test.png',
+    mimeType: 'image/png',
+    buffer: pngBuffer,
+  });
+  await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/, { timeout: 8000 });
+
+  await page.evaluate(() => {
+    window.__pickerCalled = false;
+    window.showDirectoryPicker = async () => {
+      window.__pickerCalled = true;
+      return { name: 'PickerDir' };
+    };
+  });
+
+  await page.locator('#navExport').click();
+  await expect(page.locator('#exportSheet')).not.toHaveClass(/hidden/);
+  await page.locator('#pickFolderBtn').click();
+
+  // explanation modal shows FIRST, browser picker not yet called
+  await expect(page.locator('#permissionModal')).not.toHaveClass(/hidden/);
+  expect(await page.evaluate(() => window.__pickerCalled)).toBe(false);
+
+  // deny → picker never called
+  await page.locator('#permDenyBtn').click();
+  await expect(page.locator('#permissionModal')).toHaveClass(/hidden/);
+  expect(await page.evaluate(() => window.__pickerCalled)).toBe(false);
+
+  // allow → picker called
+  await page.locator('#pickFolderBtn').click();
+  await expect(page.locator('#permissionModal')).not.toHaveClass(/hidden/);
+  await page.locator('#permAllowBtn').click();
+  await expect(page.locator('#permissionModal')).toHaveClass(/hidden/);
+  await page.waitForFunction(() => window.__pickerCalled === true);
+});
+
+

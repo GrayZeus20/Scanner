@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' blob: data: https://storage.googleapis.com https://tfhub.dev https://www.kaggle.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://tessdata.projectnaptha.com https://fonts.googleapis.com https://fonts.gstatic.com; worker-src 'self' blob: https://cdn.jsdelivr.net; child-src blob:; media-src 'self' blob: data:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'">
+  <meta name="referrer" content="no-referrer">
   <meta name="description" content="Web-based document scanner with camera capture, auto edge detection, filters, OCR, and PDF export.">
   <meta name="theme-color" content="#2563EB">
   <meta name="mobile-web-app-capable" content="yes">
@@ -20,8 +22,8 @@
   <meta property="og:description" content="Web document scanner dengan deteksi sudut otomatis, filter, OCR lokal, dan ekspor PDF 100% offline di perangkat.">
   <meta property="og:image" content="icons/icon-512.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="css/style.css?v=15">
-  <link rel="stylesheet" href="css/dark-mode.css?v=15">
+  <link rel="stylesheet" href="css/style.css?v=16">
+  <link rel="stylesheet" href="css/dark-mode.css?v=16">
   <link rel="manifest" href="manifest.json">
   <script src="https://unpkg.com/lucide@0.460.0"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" async></script>
@@ -32,6 +34,9 @@
     <!-- Header -->
     <header id="header">
       <div class="header-left">
+        <button id="homeBackBtn" class="icon-btn hidden" data-i18n-aria="backHome" aria-label="Ke Beranda" title="Ke Beranda">
+          <i data-lucide="arrow-left" aria-hidden="true"></i>
+        </button>
         <div class="logo">
           <i data-lucide="scan-eye" class="logo-icon" aria-hidden="true"></i>
           <span class="logo-text" data-i18n="appName">WebScanner</span>
@@ -57,7 +62,7 @@
               <button type="button" data-lang="en" role="option">Eng English</button>
             </div>
           </div>
-          <button id="darkToggle" class="icon-btn" title="Toggle Dark Mode">
+          <button id="darkToggle" class="icon-btn" title="Toggle Dark Mode" aria-label="Toggle Dark Mode">
             <i data-lucide="moon"></i>
           </button>
         </div>
@@ -71,7 +76,7 @@
           <h3 data-i18n="home">Beranda</h3>
           <div class="history-header-actions">
             <button id="newSessionBtn" class="btn btn-secondary btn-sm"><i data-lucide="plus" aria-hidden="true"></i><span data-i18n="newSession">Sesi Baru</span></button>
-            <button id="closeHistory" class="icon-btn" aria-label="Close History"><i data-lucide="x" aria-hidden="true"></i></button>
+            <button id="closeHistory" class="icon-btn" aria-label="Close History" title="Close History"><i data-lucide="x" aria-hidden="true"></i></button>
           </div>
         </div>
         <div id="historyList" class="history-list"></div>
@@ -97,6 +102,10 @@
               <i data-lucide="upload" aria-hidden="true"></i>
               <span data-i18n="importFile">Impor File</span>
             </button>
+            <button id="homeHistoryBtn" class="btn btn-secondary">
+              <i data-lucide="history" aria-hidden="true"></i>
+              <span data-i18n="history">Riwayat</span>
+            </button>
           </div>
         </div>
         <div id="editorArea" class="hidden">
@@ -119,6 +128,10 @@
                 <line id="cropGridH2" class="crop-grid-line" />
                 <line id="cropGridV1" class="crop-grid-line" />
                 <line id="cropGridV2" class="crop-grid-line" />
+                <circle id="cropDotTl" class="crop-dot" r="4.5" />
+                <circle id="cropDotTr" class="crop-dot" r="4.5" />
+                <circle id="cropDotBl" class="crop-dot" r="4.5" />
+                <circle id="cropDotBr" class="crop-dot" r="4.5" />
               </svg>
               <div id="cropArea" class="crop-area">
                 <div class="crop-handle" data-handle="tl" aria-label="Resize Top Left"></div>
@@ -178,13 +191,13 @@
           </div>
           <!-- Zoom Controls -->
           <div id="zoomControls" class="zoom-controls">
-            <button id="zoomInBtn" class="zoom-btn" title="Zoom In">
+            <button id="zoomInBtn" class="zoom-btn" title="Zoom In" aria-label="Zoom In">
               <i data-lucide="plus"></i>
             </button>
-            <button id="zoomResetBtn" class="zoom-btn" title="Reset Zoom">
+            <button id="zoomResetBtn" class="zoom-btn" title="Reset Zoom" aria-label="Reset Zoom">
               <i data-lucide="maximize"></i>
             </button>
-            <button id="zoomOutBtn" class="zoom-btn" title="Zoom Out">
+            <button id="zoomOutBtn" class="zoom-btn" title="Zoom Out" aria-label="Zoom Out">
               <i data-lucide="minus"></i>
             </button>
           </div>
@@ -227,7 +240,7 @@
       </div>
 
       <!-- Bottom Navigation -->
-      <nav id="bottomNav" class="hidden" role="navigation" aria-label="Main Navigation">
+      <nav id="bottomNav" class="hidden" role="tablist" aria-label="Main Navigation">
         <button id="navHistory" class="nav-btn" role="tab" aria-selected="false">
           <i data-lucide="history" aria-hidden="true"></i>
           <span data-i18n="history">Riwayat</span>
@@ -255,7 +268,7 @@
     <div id="toolsSheet" class="sheet-panel hidden" role="dialog" aria-modal="true" aria-label="Tools" inert>
       <div class="sheet-header">
         <h3 data-i18n="tools">Alat</h3>
-        <button id="closeToolsSheet" class="icon-btn" data-i18n-aria="close">
+        <button id="closeToolsSheet" class="icon-btn" data-i18n-aria="close" aria-label="Tutup" title="Tutup">
           <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </div>
@@ -325,7 +338,7 @@
     <div id="filterSheet" class="sheet-panel hidden" role="dialog" aria-modal="true" aria-label="Filters">
       <div class="sheet-header">
         <h3 data-i18n="filters">Filter</h3>
-        <button id="closeFilterSheet" class="icon-btn" data-i18n-aria="close">
+        <button id="closeFilterSheet" class="icon-btn" data-i18n-aria="close" aria-label="Tutup" title="Tutup">
           <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </div>
@@ -404,7 +417,7 @@
           </button>
         </div>
         <div class="filter-divider"></div>
-        <div id="filterProgress" class="ocr-progress hidden" style="margin-bottom: 8px;">
+        <div id="filterProgress" class="ocr-progress hidden">
           <div class="ocr-progress-bar"><div id="filterProgressBar" class="ocr-progress-fill"></div></div>
         </div>
         <div class="filter-footer-actions">
@@ -427,7 +440,7 @@
         <div class="pdf-preview-header">
           <h3 data-i18n="pdfPreview">Pratinjau PDF</h3>
           <span id="pdfPreviewPageInfo" class="pdf-page-info">1/1</span>
-          <button id="closePdfPreview" class="icon-btn" aria-label="Close">
+          <button id="closePdfPreview" class="icon-btn" aria-label="Close" title="Close">
             <i data-lucide="x" aria-hidden="true"></i>
           </button>
         </div>
@@ -437,10 +450,10 @@
         <div class="pdf-preview-footer">
           <span id="pdfPreviewSize" class="pdf-size-info">~0 KB</span>
           <div class="pdf-preview-nav">
-            <button id="pdfPrevPage" class="icon-btn" disabled>
+            <button id="pdfPrevPage" class="icon-btn" aria-label="Previous Page" title="Previous Page" disabled>
               <i data-lucide="chevron-left" aria-hidden="true"></i>
             </button>
-            <button id="pdfNextPage" class="icon-btn" disabled>
+            <button id="pdfNextPage" class="icon-btn" aria-label="Next Page" title="Next Page" disabled>
               <i data-lucide="chevron-right" aria-hidden="true"></i>
             </button>
           </div>
@@ -459,13 +472,13 @@
     <div id="ocrSheet" class="sheet-panel hidden" role="dialog" aria-modal="true" aria-label="OCR">
       <div class="sheet-header">
         <h3 data-i18n="ocr">Teks (OCR)</h3>
-        <button id="closeOcrSheet" class="icon-btn" data-i18n-aria="close">
+        <button id="closeOcrSheet" class="icon-btn" data-i18n-aria="close" aria-label="Tutup" title="Tutup">
           <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </div>
       <div class="sheet-body">
-        <div class="ocr-lang-toolbar" style="display: flex; gap: 8px; align-items: center; justify-content: space-between;">
-          <label for="ocrLangSelect" style="font-size: 12px; font-weight: 500; color: var(--color-text-secondary);">Bahasa Teks</label>
+        <div class="ocr-lang-toolbar">
+          <label for="ocrLangSelect">Bahasa Teks</label>
           <select id="ocrLangSelect" class="lang-select">
             <option value="ind+eng">ID + EN (Otomatis)</option>
             <option value="ind">Indonesia</option>
@@ -477,10 +490,10 @@
           <span id="ocrProgressText" class="ocr-progress-text">0%</span>
         </div>
         <div id="ocrResult" class="ocr-result" contenteditable="true" aria-label="OCR Result">
-          <p style="color: var(--color-text-secondary)"><i data-lucide="loader" aria-hidden="true"></i> <span data-i18n="processing">Memproses...</span></p>
+          <p class="ocr-result-placeholder"><i data-lucide="loader" aria-hidden="true"></i> <span data-i18n="processing">Memproses...</span></p>
         </div>
-        <div style="display: flex; gap: 8px;">
-          <button id="copyOcrBtn" class="btn btn-primary" style="flex: 1;">
+        <div class="ocr-actions-row">
+          <button id="copyOcrBtn" class="btn btn-primary">
             <i data-lucide="copy" aria-hidden="true"></i>
             <span data-i18n="copyText">Salin Teks</span>
           </button>
@@ -504,7 +517,7 @@
     <div id="exportSheet" class="sheet-panel hidden" role="dialog" aria-modal="true" aria-label="Export">
       <div class="sheet-header">
         <h3 data-i18n="downloadCenter">Unduhan</h3>
-        <button id="closeExportSheet" class="icon-btn" data-i18n-aria="close">
+        <button id="closeExportSheet" class="icon-btn" data-i18n-aria="close" aria-label="Tutup" title="Tutup">
           <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </div>
@@ -586,7 +599,7 @@
       <div class="pdf-preview-content session-guard-content">
         <div class="pdf-preview-header">
           <h3 data-i18n="sessionGuardTitle">Ada pekerjaan belum disimpan</h3>
-          <button id="closeSessionGuard" class="icon-btn" aria-label="Close"><i data-lucide="x" aria-hidden="true"></i></button>
+          <button id="closeSessionGuard" class="icon-btn" aria-label="Close" title="Close"><i data-lucide="x" aria-hidden="true"></i></button>
         </div>
         <div class="session-guard-body">
           <i data-lucide="triangle-alert" class="session-guard-icon" aria-hidden="true"></i>
@@ -596,6 +609,25 @@
           <button id="guardSaveBtn" class="btn btn-primary"><i data-lucide="save" aria-hidden="true"></i><span data-i18n="sessionGuardSave">Simpan & Buka</span></button>
           <button id="guardDiscardBtn" class="btn btn-danger"><i data-lucide="trash-2" aria-hidden="true"></i><span data-i18n="sessionGuardDiscard">Buang & Buka</span></button>
           <button id="guardCancelBtn" class="btn btn-secondary"><span data-i18n="sessionGuardCancel">Batal</span></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Permission Helper Modal (folder access explanation) -->
+    <div id="permissionModal" class="pdf-preview-modal hidden" role="dialog" aria-modal="true" aria-label="Folder permission" inert>
+      <div class="pdf-preview-backdrop" id="permissionBackdrop"></div>
+      <div class="pdf-preview-content session-guard-content">
+        <div class="pdf-preview-header">
+          <h3 data-i18n="permFolderTitle">Izin Akses Folder</h3>
+          <button id="closePermissionModal" class="icon-btn" aria-label="Close" title="Close"><i data-lucide="x" aria-hidden="true"></i></button>
+        </div>
+        <div class="session-guard-body">
+          <i data-lucide="folder-key" class="session-guard-icon" aria-hidden="true"></i>
+          <p id="permFolderDesc" data-i18n="permFolderDesc">WebScanner butuh izin membuat folder "Scanner" dan menyimpan hasil unduhan di perangkatmu. Semua file tetap lokal — tidak ada data yang dikirim ke luar.</p>
+        </div>
+        <div class="session-guard-actions">
+          <button id="permAllowBtn" class="btn btn-primary"><i data-lucide="check" aria-hidden="true"></i><span data-i18n="permFolderAllow">Izinkan</span></button>
+          <button id="permDenyBtn" class="btn btn-secondary"><span data-i18n="sessionGuardCancel">Batal</span></button>
         </div>
       </div>
     </div>
@@ -619,10 +651,5 @@
   <script src="js/ocr.js"></script>
   <script src="js/inpaint.js"></script>
   <script src="js/app.js"></script>
-  <script>
-    window.addEventListener('DOMContentLoaded', () => {
-      window.MLDetector.init();
-    });
-  </script>
 </body>
 </html>

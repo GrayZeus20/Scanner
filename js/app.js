@@ -201,6 +201,9 @@ const app = {
         setTimeout(() => document.getElementById('fileInput')?.click(), 350);
       }
     } catch (_) {}
+
+    // moved from inline <script> (CSP: no unsafe-inline) — same DOMContentLoaded timing
+    if (window.MLDetector?.init) window.MLDetector.init();
   },
 
   initPwaInstall() {
@@ -424,6 +427,14 @@ const app = {
       camera.stop();
       this.showHistory();
     });
+
+    // Home surface: open riwayat directly (nav hidden on home)
+    document.getElementById('homeHistoryBtn').addEventListener('click', () => {
+      camera.stop();
+      this.showHistory();
+    });
+    // Back to home from edit / riwayat (guarded when unsaved work)
+    document.getElementById('homeBackBtn').addEventListener('click', () => this.goHome());
     document.getElementById('closeHistory').addEventListener('click', () => {
       camera.stop();
       document.getElementById('historyView').classList.add('hidden');
@@ -803,6 +814,7 @@ const app = {
     document.getElementById('editorArea')?.classList.remove('hidden');
     document.getElementById('bottomNav')?.classList.remove('hidden');
     document.getElementById('emptyState')?.classList.add('hidden');
+    document.getElementById('homeBackBtn')?.classList.remove('hidden');
     this.setActiveNav(null);
   },
 
@@ -845,6 +857,7 @@ const app = {
   openCamera() {
     camera.stop();
     document.getElementById('historyView')?.classList.add('hidden');
+    document.getElementById('homeBackBtn')?.classList.add('hidden');
     camera.start();
   },
 
@@ -863,17 +876,36 @@ const app = {
 
     this.showToast(t('processing'));
 
-    // ponytail: autoCrop warp off on import — keeps original dims (crop.spec floor); flip true + adjust tests if auto-warp on import wanted
-    const { pages, errors } = await deepscan.batchImport(images, { autoCrop: false, createSession: false });
+    // lock undo/redo while importing (no history actions mid-batch)
+    this._importing = true;
+    this.syncUndoRedoLock();
+    try {
+      // ponytail: autoCrop warp off on import — keeps original dims (crop.spec floor); flip true + adjust tests if auto-warp on import wanted
+      const { pages, errors } = await deepscan.batchImport(images, { autoCrop: false, createSession: false });
 
-    // If editor already has an open unsaved doc, guard before appending new pages
-    if (this.state.pages.length > 0 && this.state.dirty) {
-      this._pendingBatch = pages;
-      this.showSessionGuard(pages.length, { mode: 'import' });
-      return;
+      // If editor already has an open unsaved doc, guard before appending new pages
+      if (this.state.pages.length > 0 && this.state.dirty) {
+        this._pendingBatch = pages;
+        this.showSessionGuard(pages.length, { mode: 'import' });
+        return;
+      }
+
+      this._applyBatch(pages, errors, rejected);
+    } finally {
+      this._importing = false;
+      this.syncUndoRedoLock();
     }
+  },
 
-    this._applyBatch(pages, errors, rejected);
+  syncUndoRedoLock() {
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    if (this._importing) {
+      if (undoBtn) undoBtn.disabled = true;
+      if (redoBtn) redoBtn.disabled = true;
+    } else {
+      this.updateUndoRedoUI();
+    }
   },
 
   _applyBatch(pages, errors, rejected = 0) {
@@ -897,6 +929,10 @@ const app = {
 
     this.showEditor();
     this.updatePagesTray();
+    // wipe stale frame first — previously open image must not flash during import
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas?.getContext('2d');
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
     this.renderPendingPage(this.state.currentPageIndex);
 
     if (errors.length > 0 || rejected > 0) {
@@ -1195,11 +1231,43 @@ const app = {
     }
   },
 
+  /** Explain-then-ask helper: modal klarifikasi izin folder, resolve true = lanjut minta akses browser. */
+  requestFolderPermission() {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('permissionModal');
+      if (!modal) { resolve(true); return; }
+      const allowBtn = document.getElementById('permAllowBtn');
+      const denyBtn = document.getElementById('permDenyBtn');
+      const closeBtn = document.getElementById('closePermissionModal');
+      const backdrop = document.getElementById('permissionBackdrop');
+      const onAllow = () => done(true);
+      const onDeny = () => done(false);
+      const done = (ok) => {
+        allowBtn.removeEventListener('click', onAllow);
+        denyBtn.removeEventListener('click', onDeny);
+        closeBtn.removeEventListener('click', onDeny);
+        backdrop.removeEventListener('click', onDeny);
+        modal.classList.add('hidden');
+        modal.setAttribute('inert', '');
+        resolve(ok);
+      };
+      allowBtn.addEventListener('click', onAllow);
+      denyBtn.addEventListener('click', onDeny);
+      closeBtn.addEventListener('click', onDeny);
+      backdrop.addEventListener('click', onDeny);
+      modal.classList.remove('hidden');
+      modal.removeAttribute('inert');
+      lucide.createIcons({ root: modal });
+    });
+  },
+
   async pickDownloadFolder() {
     if (!window.showDirectoryPicker) {
       this.showToast(t('folderFallback'), 'warning');
       return;
     }
+    const allowed = await this.requestFolderPermission();
+    if (!allowed) return;
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
       await storage.setDirHandle(handle);
@@ -1743,9 +1811,20 @@ const app = {
     document.getElementById('emptyState')?.classList.add('hidden');
     document.getElementById('editorArea')?.classList.add('hidden');
     document.getElementById('bottomNav')?.classList.add('hidden'); // nav = edit-session only
+    // riwayat surface: back button returns to home (goHome guards unsaved work)
+    document.getElementById('homeBackBtn')?.classList.remove('hidden');
     document.getElementById('historyView').classList.remove('hidden');
     this.setActiveNav('navHistory');
     this.renderHome();
+  },
+
+  /** Back to home surface (emptyState). Warns first when unsaved work would be left behind. */
+  goHome() {
+    if (this.state.pages.length > 0 && this.state.dirty) {
+      this.showSessionGuard(this.state.pages.length, { mode: 'home' });
+    } else {
+      this.startNewSession();
+    }
   },
 
   renderHome() {
@@ -1814,6 +1893,13 @@ const app = {
     this._guardPending = pending;
     const desc = document.getElementById('sessionGuardDesc');
     if (desc) desc.textContent = t('sessionGuardDesc', count);
+    // button labels follow the pending action (home vs open vs new)
+    const saveKey = pending.mode === 'home' ? 'sessionGuardSaveHome' : 'sessionGuardSave';
+    const discardKey = pending.mode === 'home' ? 'sessionGuardDiscardHome' : 'sessionGuardDiscard';
+    const saveSpan = document.querySelector('#guardSaveBtn [data-i18n]');
+    const discardSpan = document.querySelector('#guardDiscardBtn [data-i18n]');
+    if (saveSpan) { saveSpan.dataset.i18n = saveKey; saveSpan.textContent = t(saveKey); }
+    if (discardSpan) { discardSpan.dataset.i18n = discardKey; discardSpan.textContent = t(discardKey); }
     const modal = document.getElementById('sessionGuardModal');
     modal.classList.remove('hidden');
     modal.removeAttribute('inert');
@@ -1883,6 +1969,7 @@ const app = {
     document.getElementById('historyView').classList.add('hidden');
     document.getElementById('editorArea')?.classList.add('hidden');
     document.getElementById('bottomNav')?.classList.add('hidden');
+    document.getElementById('homeBackBtn')?.classList.add('hidden');
     document.getElementById('emptyState')?.classList.remove('hidden');
     this.setActiveNav(null);
   },
@@ -1896,6 +1983,7 @@ const app = {
       await this.emit('session:create', {});
       if (pending.mode === 'open') this.openSession(pending.id);
       else if (pending.mode === 'new') this.startNewSession();
+      else if (pending.mode === 'home') this.startNewSession();
       else if (pending.mode === 'import' && batch) this._applyBatch(batch, []);
     };
     const discard = () => {
@@ -1906,6 +1994,7 @@ const app = {
       if (!pending) return;
       if (pending.mode === 'open') this.openSession(pending.id);
       else if (pending.mode === 'new') this.startNewSession();
+      else if (pending.mode === 'home') this.startNewSession();
       else if (pending.mode === 'import') {
         this.state.pages = [];
         this.state.activeSessionId = null;
@@ -2205,6 +2294,7 @@ const app = {
   },
 
   async undo() {
+    if (this._importing) return;
     if (this.state.undoStack.length === 0) return;
 
     const page = this.state.pages[this.state.currentPageIndex];
@@ -2226,6 +2316,7 @@ const app = {
   },
 
   async redo() {
+    if (this._importing) return;
     if (this.state.redoStack.length === 0) return;
 
     const page = this.state.pages[this.state.currentPageIndex];

@@ -4,7 +4,9 @@ const manualCrop = {
   magnifier: null,
   wrapper: null,
   canvas: null,
-  handleOffset: 27, // 54px handle / 2 = 27px offset untuk center
+  handleSize: 50,   // harus sinkron dengan .crop-handle di style.css
+  handleOffset: 25, // handleSize / 2 — center handle tepat di corner
+  magSize: 110,     // harus sinkron dengan .crop-magnifier di style.css
 
   // SVG elements for non-clipped rendering
   _svg: null,
@@ -15,6 +17,11 @@ const manualCrop = {
   _gridH2: null,
   _gridV1: null,
   _gridV2: null,
+  // Titik pas: titik potong persis di tiap sudut
+  _dotTl: null,
+  _dotTr: null,
+  _dotBl: null,
+  _dotBr: null,
 
   // Aspect ratio presets: null = free, number = w/h ratio
   RATIO_MAP: { free: null, '1:1': 1, '3:4': 3 / 4, a4: 210 / 297 },
@@ -57,6 +64,10 @@ const manualCrop = {
     this._gridH2 = document.getElementById('cropGridH2');
     this._gridV1 = document.getElementById('cropGridV1');
     this._gridV2 = document.getElementById('cropGridV2');
+    this._dotTl = document.getElementById('cropDotTl');
+    this._dotTr = document.getElementById('cropDotTr');
+    this._dotBl = document.getElementById('cropDotBl');
+    this._dotBr = document.getElementById('cropDotBr');
 
     if (!this.area || this.initialized) return;
     this.initialized = true;
@@ -155,10 +166,11 @@ const manualCrop = {
     const dx = pos.x - this.state.startX;
     const dy = pos.y - this.state.startY;
 
-    const minBoundX = cr.left - wr.left;
-    const minBoundY = cr.top - wr.top;
-    const maxBoundX = cr.right - wr.left;
-    const maxBoundY = cr.bottom - wr.top;
+    // Corner drag bounds = canvas ∩ visible wrapper — corner selalu terlihat
+    const minBoundX = Math.max(0, cr.left - wr.left);
+    const minBoundY = Math.max(0, cr.top - wr.top);
+    const maxBoundX = Math.min(wr.width, cr.right - wr.left);
+    const maxBoundY = Math.min(wr.height, cr.bottom - wr.top);
 
     if (this.state.draggingArea) {
       // Drag entire quadrilateral
@@ -232,13 +244,17 @@ const manualCrop = {
     const scaleX = this.canvas.width / cr.width;
     const scaleY = this.canvas.height / cr.height;
 
-    const magLeft = (pos.x - wr.left) + 20;
-    const magTop = (pos.y - wr.top) - 140;
+    // Clamp magnifier fully inside wrapper — never overflow / get clipped
+    const pad = 8;
+    let magLeft = (pos.x - wr.left) + 20;
+    let magTop = (pos.y - wr.top) - 140;
+    magLeft = Math.max(pad, Math.min(magLeft, wr.width - this.magSize - pad));
+    magTop = Math.max(pad, Math.min(magTop, wr.height - this.magSize - pad));
 
     this.magnifier.style.left = magLeft + 'px';
     this.magnifier.style.top = magTop + 'px';
 
-    const magSize = 120;
+    const magSize = this.magSize;
     const bgX = (pos.x - cr.left) * scaleX - magSize / 2;
     const bgY = (pos.y - cr.top) * scaleY - magSize / 2;
     this.magnifier.style.backgroundPosition = `${-bgX}px ${-bgY}px`;
@@ -271,13 +287,20 @@ const manualCrop = {
     const c = this.state.corners;
     const off = this.handleOffset;
 
-    // 1. Position handles directly without any parent clipping
+    // Wrapper-relative bounds — handles must never overflow the visible area
+    const wr = this._cache.wrapperRect || (this.wrapper && this.wrapper.getBoundingClientRect());
+    const maxLeft = wr ? wr.width - this.handleSize : Infinity;
+    const maxTop = wr ? wr.height - this.handleSize : Infinity;
+
+    // 1. Position handles; clamp visual box inside wrapper so it stays grabbable
     if (this.area) {
       this.area.querySelectorAll('.crop-handle').forEach(h => {
         const key = h.dataset.handle;
         if (c[key]) {
-          h.style.left = (c[key].x - off) + 'px';
-          h.style.top = (c[key].y - off) + 'px';
+          const rawLeft = c[key].x - off;
+          const rawTop = c[key].y - off;
+          h.style.left = Math.max(0, Math.min(rawLeft, maxLeft)) + 'px';
+          h.style.top = Math.max(0, Math.min(rawTop, maxTop)) + 'px';
         }
       });
     }
@@ -287,6 +310,12 @@ const manualCrop = {
     if (this._svgPoly) this._svgPoly.setAttribute('points', ptsStr);
     if (this._svgPolyOuter) this._svgPolyOuter.setAttribute('points', ptsStr);
     if (this._svgMaskPoly) this._svgMaskPoly.setAttribute('points', ptsStr);
+
+    // 2b. Titik pas — exact crop points at each corner (never clamped)
+    if (this._dotTl) { this._dotTl.setAttribute('cx', c.tl.x); this._dotTl.setAttribute('cy', c.tl.y); }
+    if (this._dotTr) { this._dotTr.setAttribute('cx', c.tr.x); this._dotTr.setAttribute('cy', c.tr.y); }
+    if (this._dotBl) { this._dotBl.setAttribute('cx', c.bl.x); this._dotBl.setAttribute('cy', c.bl.y); }
+    if (this._dotBr) { this._dotBr.setAttribute('cx', c.br.x); this._dotBr.setAttribute('cy', c.br.y); }
 
     // 3. Render rule-of-thirds grid
     if (this._gridH1 && this._gridH2 && this._gridV1 && this._gridV2) {

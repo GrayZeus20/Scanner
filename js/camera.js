@@ -94,6 +94,7 @@ const camera = {
       document.getElementById('cameraView').classList.remove('hidden');
       document.getElementById('editorArea')?.classList.add('hidden');
       document.getElementById('bottomNav')?.classList.add('hidden');
+      document.getElementById('homeBackBtn')?.classList.add('hidden');
       document.getElementById('emptyState')?.classList.add('hidden');
       lucide.createIcons();
     } catch (err) {
@@ -476,9 +477,14 @@ const camera = {
     if (app.state.imageLoaded) {
       document.getElementById('editorArea')?.classList.remove('hidden');
       document.getElementById('bottomNav')?.classList.remove('hidden');
+      document.getElementById('homeBackBtn')?.classList.remove('hidden');
     } else {
-      document.getElementById('emptyState')?.classList.remove('hidden');
+      // never surface emptyState on top of an open riwayat (double-view during import)
+      if (document.getElementById('historyView')?.classList.contains('hidden')) {
+        document.getElementById('emptyState')?.classList.remove('hidden');
+      }
       document.getElementById('bottomNav')?.classList.add('hidden');
+      document.getElementById('homeBackBtn')?.classList.add('hidden');
     }
   },
 

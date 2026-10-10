@@ -1,4 +1,4 @@
-const CACHE_NAME = 'webscanner-v14';
+const CACHE_NAME = 'webscanner-v16';
 
 const LOCAL_ASSETS = [
   './',
