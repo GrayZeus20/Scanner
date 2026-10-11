@@ -20,7 +20,7 @@ Unlike traditional scanners that upload your sensitive documents (ID cards, invo
    - Pemotongan perspektif (Perspective Warp) untuk meluruskan dokumen secara instan.
 
 2. **Machine Learning CNN On-Device (TensorFlow.js + MobileNet v2)**
-   - Klasifikasi visual tipe dokumen (struk, surat, buku, dokumen cetak, kartu identitas) langsung di GPU/CPU browser via WebGL.
+   - Klasifikasi visual tipe dokumen langsung di GPU/CPU browser via WebGL; runtime dan model ML dimuat saat fitur klasifikasi digunakan.
    - Penilaian kualitas dokumen (kecerahan, kontras, ketajaman).
    - **100% Privat**: Dokumen tidak pernah dikirim ke server pihak ketiga.
 
@@ -35,7 +35,7 @@ Unlike traditional scanners that upload your sensitive documents (ID cards, invo
    - Bekerja 100% di browser tanpa bergantung pada API Stable Diffusion cloud.
 
 5. **OCR Teks Lokal (Tesseract.js WebAssembly)**
-   - Ekstraksi teks dari gambar secara lokal menggunakan Neural Network LSTM/CNN yang terkompilasi ke WebAssembly.
+   - Ekstraksi teks dari gambar secara lokal menggunakan Neural Network LSTM/CNN yang terkompilasi ke WebAssembly; library OCR baru dimuat saat OCR dimulai.
 
 6. **Ekspor Multi-Halaman ke PDF & Gambar**
    - Gabungkan beberapa halaman hasil scan menjadi satu dokumen PDF ukuran A4.
@@ -113,7 +113,7 @@ Karena seluruh aplikasi berbasis **static client-side (HTML, CSS, JS)** tanpa ba
 
 ## 🧪 Menjalankan Pengujian (Testing)
 
-Proyek ini dilengkapi dengan 19 automated end-to-end tests menggunakan Playwright:
+Proyek ini dilengkapi dengan automated end-to-end tests menggunakan Playwright:
 
 ```bash
 # Menjalankan seluruh test suite
@@ -128,8 +128,9 @@ npx playwright test --ui
 ## 🔒 Privasi & Keamanan (Privacy First)
 
 - **Zero Cloud Leak**: Semua gambar diproses secara lokal di memori Canvas peramban pengguna.
-- **Offline First**: Setelah pemuatan pertama, aplikasi tetap dapat memindai dokumen tanpa koneksi internet sama sekali.
+- **Offline First**: Pemindaian dan pengolahan dasar bekerja lokal. Library/model OCR dan ML opsional perlu diunduh saat pertama kali fitur tersebut digunakan agar tersedia dari cache saat offline.
 - **Penyimpanan Lokal**: Riwayat dokumen disimpan secara aman di IndexedDB perangkat pengguna (`WebScannerDB`).
+- **Ringan saat instalasi**: Tidak memerlukan library native `canvas` di Node.js; Canvas yang digunakan adalah Web API bawaan browser.
 
 ---
 

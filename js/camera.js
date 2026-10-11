@@ -3,6 +3,11 @@ const camera = {
   _video: null,
   captureHandlerBound: false,
   capturedCount: 0,
+  captureInProgress: false,
+  _captureCompletion: null,
+  _resolveCapture: null,
+  _finishing: false,
+  _startPromise: null,
   flashMode: 'off', // 'off' | 'auto' | 'on'
   facingMode: 'environment',
 
@@ -12,7 +17,8 @@ const camera = {
   _overlayActive: false,
   _overlayRafId: null,
   _lastDetectTime: 0,
-  _DETECT_INTERVAL: 100, // ~10fps detection (not every frame)
+  _DETECT_INTERVAL: 200,
+  _detectCanvas: null,
   _smoothedCorners: null, // EMA smoothed corners
   _SMOOTH_ALPHA: 0.35, // Exponential moving average factor
 
@@ -49,6 +55,16 @@ const camera = {
   },
 
   async start() {
+    if (this._startPromise) return this._startPromise;
+    this._startPromise = this._start();
+    try {
+      return await this._startPromise;
+    } finally {
+      this._startPromise = null;
+    }
+  },
+
+  async _start() {
     if (!navigator.mediaDevices?.getUserMedia) {
       if (!window.isSecureContext) {
         this.showError('notSecure');
@@ -172,8 +188,13 @@ const camera = {
   },
 
   async capture() {
-    if (!this.video.videoWidth || !this.video.videoHeight) return;
+    if (this.captureInProgress || !this.video.videoWidth || !this.video.videoHeight) return;
+    this.captureInProgress = true;
+    this._captureCompletion = new Promise((resolve) => {
+      this._resolveCapture = resolve;
+    });
 
+    try {
     // Auto flash: briefly turn on torch
     const track = this.stream?.getVideoTracks()[0];
     if (this.flashMode === 'auto' && track?.getCapabilities?.()?.torch) {
@@ -184,12 +205,17 @@ const camera = {
     }
 
     const canvas = document.createElement('canvas');
-    canvas.width = this.video.videoWidth;
-    canvas.height = this.video.videoHeight;
-    canvas.getContext('2d').drawImage(this.video, 0, 0);
+    const maxSize = config.IMAGE_MAX_SIZE;
+    const scale = Math.min(1, maxSize / Math.max(this.video.videoWidth, this.video.videoHeight));
+    canvas.width = Math.round(this.video.videoWidth * scale);
+    canvas.height = Math.round(this.video.videoHeight * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas kamera tidak tersedia.');
+    ctx.drawImage(this.video, 0, 0, canvas.width, canvas.height);
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-    app.loadImageFromSrc(dataUrl);
+    const image = await app.loadImageFromSrc(dataUrl);
+    if (!image) return;
 
     this.capturedCount++;
     app.showToast(t('photoCaptured') + this.capturedCount + ' ' + t('photoTaken'));
@@ -223,16 +249,32 @@ const camera = {
       previewImg.src = dataUrl;
       preview.classList.remove('hidden');
     }
+    } catch (err) {
+      console.error('Camera capture failed:', err);
+      app.showToast(t('error'), 'error');
+    } finally {
+      this.captureInProgress = false;
+      this._resolveCapture?.();
+      this._resolveCapture = null;
+      this._captureCompletion = null;
+    }
   },
 
-  finish() {
-    if (this.capturedCount > 0) {
-      app.showToast(this.capturedCount + ' ' + t('photoCount'));
-      // One camera burst = one session
-      app.emit('session:create', {});
+  async finish() {
+    if (this._finishing) return;
+    this._finishing = true;
+    try {
+      await this._captureCompletion;
+      if (this.capturedCount > 0) {
+        app.showToast(this.capturedCount + ' ' + t('photoCount'));
+        // One camera burst = one session
+        app.emit('session:create', {});
+      }
+      this.resetCameraUI();
+      this.stop();
+    } finally {
+      this._finishing = false;
     }
-    this.resetCameraUI();
-    this.stop();
   },
 
   cancel() {
@@ -332,6 +374,11 @@ const camera = {
       const ctx = this._overlayCanvas.getContext('2d');
       if (ctx) ctx.clearRect(0, 0, this._overlayCanvas.width, this._overlayCanvas.height);
     }
+    if (this._detectCanvas) {
+      this._detectCanvas.width = 0;
+      this._detectCanvas.height = 0;
+      this._detectCanvas = null;
+    }
     if (this._resizeOverlayBound) {
       window.removeEventListener('resize', this._resizeOverlayBound);
     }
@@ -369,12 +416,17 @@ const camera = {
     const scale = Math.min(1, MAX_DETECT / Math.max(vw, vh));
     const dw = Math.round(vw * scale), dh = Math.round(vh * scale);
 
-    const tmp = document.createElement('canvas');
-    tmp.width = dw; tmp.height = dh;
-    tmp.getContext('2d').drawImage(this.video, 0, 0, dw, dh);
+    if (!this._detectCanvas) this._detectCanvas = document.createElement('canvas');
+    if (this._detectCanvas.width !== dw || this._detectCanvas.height !== dh) {
+      this._detectCanvas.width = dw;
+      this._detectCanvas.height = dh;
+    }
+    const detectCtx = this._detectCanvas.getContext('2d');
+    if (!detectCtx) return;
+    detectCtx.drawImage(this.video, 0, 0, dw, dh);
 
     // Detect edges on the small canvas
-    const result = edgeDetection.detectContour(tmp);
+    const result = edgeDetection.detectContour(this._detectCanvas);
 
     if (result && result.confidence > 0.35) {
       // Scale corners back to overlay canvas coordinates

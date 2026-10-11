@@ -5,8 +5,12 @@ const storage = {
 
   async init() {
     if (this.initPromise) return this.initPromise;
+    if (!globalThis.indexedDB) {
+      throw new Error('IndexedDB tidak tersedia pada browser ini.');
+    }
     this.initPromise = new Promise((resolve, reject) => {
       const request = indexedDB.open(this.dbName, config.STORAGE.version);
+      request.onblocked = () => reject(new Error('Database sedang dipakai tab lain. Tutup tab WebScanner lain lalu coba lagi.'));
 
       request.onupgradeneeded = (e) => {
         const db = e.target.result;
@@ -28,10 +32,18 @@ const storage = {
 
       request.onsuccess = (e) => {
         this.db = e.target.result;
+        this.db.onversionchange = () => {
+          this.db.close();
+          this.db = null;
+          this.initPromise = null;
+        };
         resolve();
       };
 
       request.onerror = (e) => reject(e.target.error);
+    }).catch((err) => {
+      this.initPromise = null;
+      throw err;
     });
     return this.initPromise;
   },
@@ -96,29 +108,29 @@ const storage = {
 
   async legacyMigrateToSessions() {
     await this.init();
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const tx = this.db.transaction(['scans', 'sessions'], 'readwrite');
       const scanStore = tx.objectStore('scans');
       const sessionStore = tx.objectStore('sessions');
       let count = 0;
       scanStore.openCursor().onsuccess = (e) => {
         const cursor = e.target.result;
-        if (cursor) {
-          sessionStore.add({
-            name: 'Sesi (' + new Date(cursor.value.timestamp).toLocaleDateString('id-ID') + ')',
-            pages: [{ name: cursor.value.name, image: cursor.value.image }],
-            createdAt: cursor.value.timestamp,
-            updatedAt: cursor.value.timestamp,
-            fromLegacy: true
-          });
-          count++;
-          cursor.continue();
-        } else {
-          console.info('Migrated', count, 'legacy scans into sessions.');
-          resolve(count);
-        }
+        if (!cursor) return;
+        sessionStore.add({
+          name: 'Sesi (' + new Date(cursor.value.timestamp).toLocaleDateString('id-ID') + ')',
+          pages: [{ name: cursor.value.name, image: cursor.value.image }],
+          createdAt: cursor.value.timestamp,
+          updatedAt: cursor.value.timestamp,
+          fromLegacy: true
+        });
+        count++;
+        cursor.continue();
       };
-      tx.onabort = () => reject(tx.error);
+      tx.oncomplete = () => {
+        console.info('Migrated', count, 'legacy scans into sessions.');
+        resolve(count);
+      };
+      tx.onabort = () => reject(tx.error || new Error('Migration failed'));
       tx.onerror = () => reject(tx.error || new Error('Migration failed'));
     });
   },

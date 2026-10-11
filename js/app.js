@@ -1,3 +1,8 @@
+window.lucide = window.lucide || { createIcons() {} };
+document.querySelector('[data-optional-icons]')?.addEventListener('load', () => {
+  window.lucide?.createIcons();
+});
+
 const app = {
   state: {
     pages: [],
@@ -269,7 +274,7 @@ const app = {
         w: p.w || p.originalImage?.naturalWidth || 0,
         h: p.h || p.originalImage?.naturalHeight || 0
       }));
-      if (sessionPages.length > 30) { this.showToast(t('sessionFull'), 'error'); return null; }
+      if (sessionPages.length > config.MAX_SESSION_PAGES) { this.showToast(t('sessionFull'), 'error'); return null; }
       try {
         let saved;
         if (this.state.activeSessionId) {
@@ -866,13 +871,24 @@ const app = {
    */
   async importBatch(files) {
     if (!files || files.length === 0) return;
-    const images = files.filter((f) => f.type.startsWith('image/'));
-    const rejected = files.length - images.length;
+    const images = files.filter((file) =>
+      deepscan.ACCEPTED_TYPES.includes(file.type) ||
+      deepscan.ACCEPTED_EXTENSIONS.some((ext) => (file.name || '').toLowerCase().endsWith(ext))
+    );
+    const unsupported = files.length - images.length;
 
     if (images.length === 0) {
       this.showToast(files[0]?.type === 'application/pdf' ? t('pdfNotSupported') : t('unsupportedFile'), 'error');
       return;
     }
+
+    const capacity = Math.max(0, config.MAX_SESSION_PAGES - this.state.pages.length);
+    if (capacity === 0) {
+      this.showToast(t('sessionFull'), 'error');
+      return;
+    }
+    const batch = images.slice(0, capacity);
+    const rejected = unsupported + images.length - batch.length;
 
     this.showToast(t('processing'));
 
@@ -881,7 +897,7 @@ const app = {
     this.syncUndoRedoLock();
     try {
       // ponytail: autoCrop warp off on import — keeps original dims (crop.spec floor); flip true + adjust tests if auto-warp on import wanted
-      const { pages, errors } = await deepscan.batchImport(images, { autoCrop: false, createSession: false });
+      const { pages, errors } = await deepscan.batchImport(batch, { autoCrop: false, createSession: false });
 
       // If editor already has an open unsaved doc, guard before appending new pages
       if (this.state.pages.length > 0 && this.state.dirty) {
@@ -891,6 +907,9 @@ const app = {
       }
 
       this._applyBatch(pages, errors, rejected);
+    } catch (err) {
+      console.error('Import failed:', err);
+      this.showToast(t('error') + ': ' + err.message, 'error');
     } finally {
       this._importing = false;
       this.syncUndoRedoLock();
@@ -922,8 +941,8 @@ const app = {
     this.state.currentPageIndex = startIdx;
     this.state.dirty = true;
 
-    if (this.state.pages.length > 30) {
-      this.state.pages.splice(30);
+    if (this.state.pages.length > config.MAX_SESSION_PAGES) {
+      this.state.pages.splice(config.MAX_SESSION_PAGES);
       this.showToast(t('sessionFull'), 'error');
     }
 
@@ -954,36 +973,41 @@ const app = {
   },
 
   loadImageFromSrc(src, opts = {}) {
-    const img = new Image();
-    img.onload = async () => {
-      if (opts.keepSession) {
-        // existing page (session open / batch): attach to pinned index, dirty unchanged
-        const idx = opts.index ?? this.state.currentPageIndex;
-        if (this.state.pages[idx]) {
-          this.state.pages[idx].originalImage = img;
-          this.state.pages[idx].pendingSrc = null;
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        if (opts.keepSession) {
+          // existing page (session open / batch): attach to pinned index, dirty unchanged
+          const idx = opts.index ?? this.state.currentPageIndex;
+          if (this.state.pages[idx]) {
+            this.state.pages[idx].originalImage = img;
+            this.state.pages[idx].pendingSrc = null;
+          }
+        } else {
+          this.state.dirty = true;
+          const page = { originalImage: img, currentImageData: null };
+          this.state.pages.push(page);
+          this.state.currentPageIndex = this.state.pages.length - 1;
+          this.state.activeSessionId = null;
         }
-      } else {
-        this.state.dirty = true;
-        const page = { originalImage: img, currentImageData: null };
-        this.state.pages.push(page);
-        this.state.currentPageIndex = this.state.pages.length - 1;
-        this.state.activeSessionId = null;
-      }
 
-      this.showEditor();
-      this.updatePagesTray();
-
-      try {
-        this.renderPage(this.state.currentPageIndex);
-        this.autoEnhance();
-      } catch (err) {
-        console.error('Render error:', err);
-        this.showToast(t('error'));
-      }
-    };
-    img.onerror = () => this.showToast(t('error'));
-    img.src = src;
+        try {
+          this.showEditor();
+          this.updatePagesTray();
+          this.renderPage(this.state.currentPageIndex);
+          this.autoEnhance();
+        } catch (err) {
+          console.error('Render error:', err);
+          this.showToast(t('error'), 'error');
+        }
+        resolve(img);
+      };
+      img.onerror = () => {
+        this.showToast(t('error'), 'error');
+        resolve(null);
+      };
+      img.src = src;
+    });
   },
 
   renderImage(img) {
@@ -1333,15 +1357,26 @@ const app = {
     try {
       let jobs = [];
       if (format === 'pdf' || format === 'batchPdf') {
-        const canvases = await this.renderAllPagesForPdf();
-        const blob = await pdfExport.toPdfBlob(canvases, quality);
+        const blob = await pdfExport.toPdfBlobFromPages(
+          this.state.pages.length,
+          (index) => this.renderPageForPdf(index),
+          quality
+        );
         jobs = [{ name: `${base}.pdf`, blob }];
       } else if (format === 'batchJpg') {
-        const canvases = await this.renderAllPagesForPdf();
-        jobs = canvases.map((c, i) => ({
-          name: `${base}_p${i + 1}.jpg`,
-          blob: pdfExport.toImageBlob(c, 'jpg', quality)
-        }));
+        for (let index = 0; index < this.state.pages.length; index++) {
+          const canvas = await this.renderPageForPdf(index);
+          if (!canvas) continue;
+          try {
+            jobs.push({
+              name: `${base}_p${index + 1}.jpg`,
+              blob: pdfExport.toImageBlob(canvas, 'jpg', quality)
+            });
+          } finally {
+            canvas.width = 0;
+            canvas.height = 0;
+          }
+        }
       } else if (format === 'png') {
         jobs = [{ name: `${base}.png`, blob: pdfExport.toImageBlob(this.canvas, 'png', quality) }];
       } else {
@@ -1432,7 +1467,12 @@ const app = {
       }
 
       if (filters.sharpness > 0) {
-        await this.applySharpness(filters.sharpness);
+        try {
+          await this.applySharpness(filters.sharpness);
+        } catch (err) {
+          console.error('Sharpness filter failed:', err);
+          this.showToast(t('error') + ': ' + err.message, 'error');
+        }
       }
 
       page.currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -1450,38 +1490,61 @@ const app = {
     const progressFill = document.getElementById('filterProgressBar');
     if (progressEl) progressEl.classList.remove('hidden');
 
-    const worker = new Worker('js/filter-worker.js');
-    const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+    let worker;
+    let imageData;
+    try {
+      imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+      worker = new Worker('js/filter-worker.js');
+    } catch (err) {
+      worker?.terminate();
+      this.state.isFilterWorkerRunning = false;
+      if (progressEl) progressEl.classList.add('hidden');
+      throw err;
+    }
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        this.state.isFilterWorkerRunning = false;
+        if (progressEl) progressEl.classList.add('hidden');
+        worker.terminate();
+        if (error) reject(error);
+        else resolve();
+      };
+
       worker.onmessage = (e) => {
         if (e.data.progress !== undefined) {
           if (progressFill) progressFill.style.width = e.data.progress + '%';
           return;
         }
 
-        const output = new ImageData(e.data.output, this.canvas.width, this.canvas.height);
-        this.ctx.putImageData(output, 0, 0);
-        this.state.isFilterWorkerRunning = false;
-        if (progressEl) progressEl.classList.add('hidden');
-        worker.terminate();
-        resolve();
+        try {
+          if (!e.data.output) throw new Error('Worker filter returned no image data.');
+          const output = new ImageData(e.data.output, this.canvas.width, this.canvas.height);
+          this.ctx.putImageData(output, 0, 0);
+          finish();
+        } catch (err) {
+          finish(err);
+        }
       };
 
       worker.onerror = (err) => {
         console.error('Filter worker error:', err);
-        this.state.isFilterWorkerRunning = false;
-        if (progressEl) progressEl.classList.add('hidden');
-        worker.terminate();
-        resolve();
+        finish(err);
       };
 
-      worker.postMessage({
-        data: imageData.data,
-        width: this.canvas.width,
-        height: this.canvas.height,
-        amount
-      }, [imageData.data.buffer]);
+      try {
+        worker.postMessage({
+          data: imageData.data,
+          width: this.canvas.width,
+          height: this.canvas.height,
+          amount
+        }, [imageData.data.buffer]);
+      } catch (err) {
+        finish(err);
+      }
     });
   },
 
@@ -1506,16 +1569,15 @@ const app = {
   },
 
   confirmManualCrop() {
-    this.saveUndoState();
-    const croppedCanvas = manualCrop.cropQuadrilateral();
-    const canvas = this.canvas;
-
-    if (!croppedCanvas || croppedCanvas.width < 10 || croppedCanvas.height < 10) {
-      this.showToast(t('cropTooSmall'));
-      return;
-    }
-
     try {
+      const croppedCanvas = manualCrop.cropQuadrilateral();
+      if (!croppedCanvas || croppedCanvas.width < 10 || croppedCanvas.height < 10) {
+        this.showToast(t('cropTooSmall'));
+        return;
+      }
+
+      this.saveUndoState();
+      const canvas = this.canvas;
       canvas.width = croppedCanvas.width;
       canvas.height = croppedCanvas.height;
       this.ctx.drawImage(croppedCanvas, 0, 0);
@@ -1980,7 +2042,12 @@ const app = {
       const batch = this._pendingBatch;
       this.closeSessionGuard();
       if (!pending) return;
-      await this.emit('session:create', {});
+      const saved = await this.emit('session:create', {});
+      if (!saved) {
+        this._pendingBatch = batch;
+        this.showSessionGuard(this.state.pages.length, pending);
+        return;
+      }
       if (pending.mode === 'open') this.openSession(pending.id);
       else if (pending.mode === 'new') this.startNewSession();
       else if (pending.mode === 'home') this.startNewSession();
@@ -2186,6 +2253,11 @@ const app = {
   },
 
   async confirmInpaint() {
+    if (!inpaint.maskBounds) {
+      this.showToast(t('noImage') || 'Pilih area objek terlebih dahulu');
+      this.cancelInpaint();
+      return;
+    }
     this.saveUndoState();
     const progressEl = document.getElementById('inpaintProgress');
     if (progressEl) progressEl.classList.remove('hidden');
@@ -2280,6 +2352,7 @@ const app = {
 
     const stateSnapshot = {
       imageData: page.originalImage.src,
+      bytes: Math.ceil(page.originalImage.src.length * 0.75),
       canvasWidth: this.canvas.width,
       canvasHeight: this.canvas.height,
       filters: JSON.parse(JSON.stringify(this.state.filters))
@@ -2290,7 +2363,24 @@ const app = {
       this.state.undoStack.shift(); // Remove oldest
     }
     this.state.redoStack = []; // Clear redo on new action
+    this.trimUndoHistory();
     this.updateUndoRedoUI();
+  },
+
+  trimUndoHistory() {
+    const maxBytes = config.MAX_UNDO_BYTES;
+    const history = () => this.state.undoStack.concat(this.state.redoStack);
+    const bytes = (state) => state.bytes || Math.ceil((state.imageData?.length || 0) * 0.75);
+
+    let snapshots = history();
+    let totalBytes = snapshots.reduce((sum, state) => sum + bytes(state), 0);
+    while (totalBytes > maxBytes && snapshots.length > 1) {
+      const oldestUndo = this.state.undoStack.shift();
+      const removed = oldestUndo || this.state.redoStack.shift();
+      if (!removed) break;
+      totalBytes -= bytes(removed);
+      snapshots = history();
+    }
   },
 
   async undo() {
@@ -2311,7 +2401,16 @@ const app = {
 
     // Restore previous state
     const prevState = this.state.undoStack.pop();
-    await this.restoreState(prevState);
+    try {
+      await this.restoreState(prevState);
+    } catch (err) {
+      this.state.undoStack.push(prevState);
+      this.state.redoStack.pop();
+      this.showToast(t('error') + ': ' + err.message, 'error');
+      this.updateUndoRedoUI();
+      return;
+    }
+    this.trimUndoHistory();
     this.updateUndoRedoUI();
   },
 
@@ -2333,12 +2432,21 @@ const app = {
 
     // Restore next state
     const nextState = this.state.redoStack.pop();
-    await this.restoreState(nextState);
+    try {
+      await this.restoreState(nextState);
+    } catch (err) {
+      this.state.redoStack.push(nextState);
+      this.state.undoStack.pop();
+      this.showToast(t('error') + ': ' + err.message, 'error');
+      this.updateUndoRedoUI();
+      return;
+    }
+    this.trimUndoHistory();
     this.updateUndoRedoUI();
   },
 
   async restoreState(state) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
         const page = this.state.pages[this.state.currentPageIndex];
@@ -2368,6 +2476,7 @@ const app = {
         this.resetZoom();
         resolve();
       };
+      img.onerror = () => reject(new Error('Gagal memulihkan gambar dari riwayat.'));
       img.src = state.imageData;
     });
   },
@@ -2407,26 +2516,29 @@ const app = {
 
     const modal = document.getElementById('pdfPreviewModal');
     const backdrop = document.getElementById('pdfPreviewBackdrop');
-    const previewCanvas = document.getElementById('pdfPreviewCanvas');
-    const ctx = previewCanvas.getContext('2d');
 
+    this.releasePdfPreview();
     this._pdfPreviewIndex = 0;
-    this._pdfPreviewCanvases = await this.renderAllPagesForPdf();
-
-    // Show first page
-    this.updatePdfPreview();
+    this._pdfPreviewPageCount = this.state.pages.length;
+    try {
+      await this.updatePdfPreview();
+    } catch (err) {
+      console.error('PDF preview error:', err);
+      this.showToast(t('error') + ': ' + err.message, 'error');
+      return;
+    }
 
     // Navigation
     document.getElementById('pdfPrevPage').onclick = () => {
       if (this._pdfPreviewIndex > 0) {
         this._pdfPreviewIndex--;
-        this.updatePdfPreview();
+        this.updatePdfPreview().catch((err) => this.showToast(err.message, 'error'));
       }
     };
     document.getElementById('pdfNextPage').onclick = () => {
-      if (this._pdfPreviewIndex < this._pdfPreviewCanvases.length - 1) {
+      if (this._pdfPreviewIndex < this._pdfPreviewPageCount - 1) {
         this._pdfPreviewIndex++;
-        this.updatePdfPreview();
+        this.updatePdfPreview().catch((err) => this.showToast(err.message, 'error'));
       }
     };
 
@@ -2434,10 +2546,12 @@ const app = {
     document.getElementById('closePdfPreview').onclick = () => {
       modal.classList.add('hidden');
       modal.setAttribute('inert', '');
+      this.releasePdfPreview();
     };
     backdrop.onclick = () => {
       modal.classList.add('hidden');
       modal.setAttribute('inert', '');
+      this.releasePdfPreview();
     };
 
     // Confirm export → folder Scanner (fallback: browser download)
@@ -2450,7 +2564,11 @@ const app = {
       this.toggleSheet('exportSheet', true);
       this.showDlProgress(true, 20, t('downloadProgress'));
       try {
-        const blob = await pdfExport.toPdfBlob(this._pdfPreviewCanvases, quality);
+        const blob = await pdfExport.toPdfBlobFromPages(
+          this._pdfPreviewPageCount,
+          (index) => this.renderPageForPdf(index),
+          quality
+        );
         const usedFolder = await this.saveFiles([{ name: `${base}.pdf`, blob }]);
         this.showDlProgress(true, 100, t('downloadDone'));
         this.showToast(usedFolder ? t('downloadDone') : t('folderFallback'), 'success');
@@ -2464,6 +2582,8 @@ const app = {
         this.showDlProgress(false);
         this.toggleSheet('exportSheet', false);
         this.showToast(t('error'), 'error');
+      } finally {
+        this.releasePdfPreview();
       }
     };
 
@@ -2475,74 +2595,100 @@ const app = {
   updatePdfPreview() {
     const previewCanvas = document.getElementById('pdfPreviewCanvas');
     const ctx = previewCanvas.getContext('2d');
-    const currentCanvas = this._pdfPreviewCanvases[this._pdfPreviewIndex];
+    this.releasePdfPreview();
+    const pageIndex = this._pdfPreviewIndex;
+    const requestId = (this._pdfPreviewRequestId || 0) + 1;
+    this._pdfPreviewRequestId = requestId;
 
-    previewCanvas.width = currentCanvas.width;
-    previewCanvas.height = currentCanvas.height;
-    ctx.drawImage(currentCanvas, 0, 0);
+    return this.renderPageForPdf(pageIndex, 960).then((currentCanvas) => {
+      if (requestId !== this._pdfPreviewRequestId || !currentCanvas) {
+        if (currentCanvas) {
+          currentCanvas.width = 0;
+          currentCanvas.height = 0;
+        }
+        return;
+      }
+      previewCanvas.width = currentCanvas.width;
+      previewCanvas.height = currentCanvas.height;
+      ctx.drawImage(currentCanvas, 0, 0);
+      const estimatedSize = Math.round(currentCanvas.width * currentCanvas.height * 0.15);
+      currentCanvas.width = 0;
+      currentCanvas.height = 0;
 
-    // Update page info
-    document.getElementById('pdfPreviewPageInfo').textContent =
-      `${this._pdfPreviewIndex + 1}/${this._pdfPreviewCanvases.length}`;
+      document.getElementById('pdfPreviewPageInfo').textContent =
+        `${pageIndex + 1}/${this._pdfPreviewPageCount}`;
+      document.getElementById('pdfPrevPage').disabled = pageIndex === 0;
+      document.getElementById('pdfNextPage').disabled = pageIndex === this._pdfPreviewPageCount - 1;
 
-    // Update buttons
-    document.getElementById('pdfPrevPage').disabled = this._pdfPreviewIndex === 0;
-    document.getElementById('pdfNextPage').disabled =
-      this._pdfPreviewIndex === this._pdfPreviewCanvases.length - 1;
-
-    // Estimate size (rough JPEG estimate)
-    const estimatedSize = Math.round(currentCanvas.width * currentCanvas.height * 0.15);
-    const sizeText = estimatedSize > 1024 * 1024
-      ? `~${(estimatedSize / (1024 * 1024)).toFixed(1)} MB`
-      : `~${Math.round(estimatedSize / 1024)} KB`;
-    document.getElementById('pdfPreviewSize').textContent = sizeText;
+      const sizeText = estimatedSize > 1024 * 1024
+        ? `~${(estimatedSize / (1024 * 1024)).toFixed(1)} MB`
+        : `~${Math.round(estimatedSize / 1024)} KB`;
+      document.getElementById('pdfPreviewSize').textContent = sizeText;
+    });
   },
 
-  async renderAllPagesForPdf() {
-    const filters = this.state.filters;
-    const loadPage = async (page) => {
-      let img = page.originalImage;
-      if (!img && page.pendingSrc) {
-        img = await new Promise((res, rej) => {
-          const i = new Image();
-          i.onload = () => res(i);
-          i.onerror = rej;
-          i.src = page.pendingSrc;
-        });
-        page.originalImage = img;
-        page.pendingSrc = null;
-      }
-      if (!img) return null;
-      const tempCanvas = document.createElement('canvas');
-      const w = img.naturalWidth || img.width;
-      const h = img.naturalHeight || img.height;
-      tempCanvas.width = w;
-      tempCanvas.height = h;
-      const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-      tempCtx.filter = [
-        `brightness(${100 + filters.brightness}%)`,
-        `contrast(${100 + filters.contrast}%)`,
-        `saturate(${100 + filters.saturation}%)`,
-        filters.grayscale ? 'grayscale(100%)' : '',
-        filters.sepia ? 'sepia(100%)' : '',
-        filters.invert ? 'invert(100%)' : '',
-      ].filter(Boolean).join(' ');
-      tempCtx.drawImage(img, 0, 0, w, h);
+  releasePdfPreview() {
+    this._pdfPreviewRequestId = (this._pdfPreviewRequestId || 0) + 1;
+    const previewCanvas = document.getElementById('pdfPreviewCanvas');
+    if (previewCanvas) {
+      previewCanvas.width = 0;
+      previewCanvas.height = 0;
+    }
+  },
 
-      if (filters.bw) {
-        const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-        const data = imageData.data;
-        for (let i = 0; i < data.length; i += 4) {
-          const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-          const val = avg > filters.threshold ? 255 : 0;
-          data[i] = data[i + 1] = data[i + 2] = val;
-        }
-        tempCtx.putImageData(imageData, 0, 0);
+  async renderPageForPdf(index, maxDimension = config.IMAGE_MAX_SIZE) {
+    const page = this.state.pages[index];
+    if (!page) return null;
+    const filters = this.state.filters;
+    let img = page.originalImage;
+    if (!img && page.pendingSrc) {
+      img = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error(`Gagal memuat halaman ${index + 1}.`));
+        image.src = page.pendingSrc;
+      });
+    }
+    if (!img) return null;
+
+    const width = img.naturalWidth || img.width;
+    const height = img.naturalHeight || img.height;
+    const scale = Math.min(1, maxDimension / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error(`Canvas halaman ${index + 1} tidak dapat dibuat.`);
+    ctx.filter = [
+      `brightness(${100 + filters.brightness}%)`,
+      `contrast(${100 + filters.contrast}%)`,
+      `saturate(${100 + filters.saturation}%)`,
+      filters.grayscale ? 'grayscale(100%)' : '',
+      filters.sepia ? 'sepia(100%)' : '',
+      filters.invert ? 'invert(100%)' : '',
+    ].filter(Boolean).join(' ');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    if (filters.bw) {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        const value = avg > filters.threshold ? 255 : 0;
+        data[i] = data[i + 1] = data[i + 2] = value;
       }
-      return tempCanvas;
-    };
-    const canvases = await Promise.all(this.state.pages.map(loadPage));
-    return canvases.filter(Boolean);
+      ctx.putImageData(imageData, 0, 0);
+    }
+    return canvas;
+  },
+
+  async renderAllPagesForPdf(maxDimension = config.IMAGE_MAX_SIZE) {
+    const canvases = [];
+    for (let index = 0; index < this.state.pages.length; index++) {
+      const canvas = await this.renderPageForPdf(index, maxDimension);
+      if (canvas) canvases.push(canvas);
+    }
+    return canvases;
   }
 };
 

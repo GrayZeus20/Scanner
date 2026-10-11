@@ -13,35 +13,58 @@ const deepscan = {
     if (!this.ACCEPTED_TYPES.includes(file.type) && !this.ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext))) {
       throw new Error('Format file tidak didukung. Gunakan PNG, JPG, JPEG, WEBP atau GIF.');
     }
-    if (file.size > this.MAX_FILE_SIZE) {
+    if (file.size <= 0 || file.size > this.MAX_FILE_SIZE) {
       throw new Error('File terlalu besar. Maksimal 15 MB.');
     }
 
-    const dataUrl = await this.toDataURL(file);
-    return this.scanDataURL(dataUrl);
+    if (typeof createImageBitmap === 'function') {
+      let bitmap;
+      try {
+        bitmap = await createImageBitmap(file);
+      } catch (err) {
+        console.warn('ImageBitmap decode failed; falling back to Image:', err);
+        return this.scanDataURL(await this.toDataURL(file));
+      }
+      try {
+        return await this.scanImage(bitmap);
+      } finally {
+        bitmap.close();
+      }
+    }
+
+    return this.scanDataURL(await this.toDataURL(file));
   },
 
   async scanDataURL(dataUrl) {
     return new Promise((resolve, reject) => {
       const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-
-        (async () => {
-          try {
-            const result = await this.detect(canvas);
-            resolve({ canvas, corners: result?.corners || null, confidence: result?.confidence || 0, category: result?.category || 'Dokumen' });
-          } catch (err) {
-            reject(err);
-          }
-        })();
-      };
+      img.onload = () => this.scanImage(img).then(resolve, reject);
       img.onerror = () => reject(new Error('Gagal memuat gambar.'));
       img.src = dataUrl;
     });
+  },
+
+  async scanImage(image) {
+    const width = image.width || image.naturalWidth;
+    const height = image.height || image.naturalHeight;
+    if (!width || !height) throw new Error('Dimensi gambar tidak valid.');
+
+    const maxSize = config.IMAGE_MAX_SIZE;
+    const scale = Math.min(1, maxSize / Math.max(width, height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) throw new Error('Canvas gambar tidak dapat dibuat.');
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    const result = await this.detect(canvas);
+    return {
+      canvas,
+      corners: result?.corners || null,
+      confidence: result?.confidence || 0,
+      category: result?.category || 'Dokumen'
+    };
   },
 
   async scanDirectory(files) {
@@ -95,9 +118,6 @@ const deepscan = {
   },
 
   classifyCategory(canvas) {
-    if (window.MLDetector?.classifyDocument) {
-      return window.MLDetector.classifyDocument(canvas).then((res) => res?.category || 'Dokumen');
-    }
     return Promise.resolve('Dokumen');
   },
 

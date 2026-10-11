@@ -22,12 +22,11 @@
   <meta property="og:description" content="Web document scanner dengan deteksi sudut otomatis, filter, OCR lokal, dan ekspor PDF 100% offline di perangkat.">
   <meta property="og:image" content="icons/icon-512.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="css/style.css?v=16">
-  <link rel="stylesheet" href="css/dark-mode.css?v=16">
+  <link rel="stylesheet" href="css/style.css?v=17">
+  <link rel="stylesheet" href="css/dark-mode.css?v=17">
   <link rel="manifest" href="manifest.json">
-  <script src="https://unpkg.com/lucide@0.460.0"></script>
+  <script src="https://unpkg.com/lucide@0.460.0" async data-optional-icons></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" async></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" async></script>
 </head>
 <body>
   <div id="app">
@@ -636,8 +635,6 @@
     <input type="file" id="fileInput" accept="image/*" multiple hidden>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1" defer></script>
   <script src="js/ml-detector.js"></script>
   <script src="js/config.js"></script>
   <script src="js/ai.js"></script>

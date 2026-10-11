@@ -10,20 +10,26 @@ const ocrEngine = {
   worker: null,
   currentLang: 'ind+eng',
   _abortFlag: false,
+  _tesseractPromise: null,
 
   async ensureTesseract() {
     if (typeof Tesseract !== 'undefined') return true;
-    for (let i = 0; i < 20; i++) {
-      await new Promise(r => setTimeout(r, 150));
-      if (typeof Tesseract !== 'undefined') return true;
+    if (!this._tesseractPromise) {
+      this._tesseractPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+        script.onload = () => {
+          if (typeof Tesseract === 'undefined') reject(new Error('Library Tesseract gagal diinisialisasi.'));
+          else resolve(true);
+        };
+        script.onerror = () => reject(new Error('Gagal memuat library Tesseract. Periksa koneksi internet Anda.'));
+        document.head.appendChild(script);
+      }).catch((err) => {
+        this._tesseractPromise = null;
+        throw err;
+      });
     }
-    return new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-      script.onload = () => resolve(true);
-      script.onerror = () => reject(new Error('Gagal memuat library Tesseract. Periksa koneksi internet Anda.'));
-      document.head.appendChild(script);
-    });
+    return this._tesseractPromise;
   },
 
   async getWorker(lang = 'ind+eng') {
@@ -105,28 +111,33 @@ const ocrEngine = {
       }
 
       let checkInterval;
+      let timeoutId;
+      let shouldTerminate = false;
       const timeoutMs = config.OCR?.timeout || 50000;
 
-      const result = await Promise.race([
-        worker.recognize(processedCanvas).then(res => {
-          clearInterval(checkInterval);
-          return res;
-        }),
-        new Promise((_, reject) => {
-          checkInterval = setInterval(() => {
-            if (this._abortFlag || (abortCheck && abortCheck())) {
-              clearInterval(checkInterval);
-              this.terminate();
-              reject(new Error(t('ocrCancelled') || 'OCR dibatalkan'));
-            }
-          }, 200);
-          setTimeout(() => {
-            clearInterval(checkInterval);
-            this.terminate();
-            reject(new Error(t('ocrTimedOut') || 'Waktu pemrosesan OCR habis.'));
-          }, timeoutMs);
-        })
-      ]);
+      let rejectGuard;
+      const guard = new Promise((_, reject) => { rejectGuard = reject; });
+      checkInterval = setInterval(() => {
+        if (this._abortFlag || (abortCheck && abortCheck())) {
+          shouldTerminate = true;
+          rejectGuard(new Error(t('ocrCancelled') || 'OCR dibatalkan'));
+        }
+      }, 200);
+      timeoutId = setTimeout(() => {
+        shouldTerminate = true;
+        rejectGuard(new Error(t('ocrTimedOut') || 'Waktu pemrosesan OCR habis.'));
+      }, timeoutMs);
+
+      let result;
+      try {
+        result = await Promise.race([worker.recognize(processedCanvas), guard]);
+      } catch (error) {
+        if (shouldTerminate && this.worker === worker) await this.terminate();
+        throw error;
+      } finally {
+        clearInterval(checkInterval);
+        clearTimeout(timeoutId);
+      }
 
       this._progressCallback = null;
       return result?.data?.text?.trim() || '';

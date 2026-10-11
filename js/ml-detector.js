@@ -8,30 +8,61 @@
 const MLDetector = {
   tfReady: false,
   model: null,
+  _runtimePromise: null,
+  _modelPromise: null,
 
   async init() {
-    try {
-      if (typeof tf === 'undefined') {
-        console.log('TensorFlow.js not loaded, using classical CV only');
-        return false;
-      }
-      await tf.ready();
-      this.tfReady = true;
-      // Lazy-load MobileNet for content analysis (not blocking)
-      this._loadModel();
-      return true;
-    } catch (e) {
-      console.log('TF init failed, classical CV only:', e.message);
-      return false;
-    }
+    return this.tfReady;
   },
 
   async _loadModel() {
-    try {
-      this.model = await mobilenet.load({ version: 2, alpha: 1.0 });
-    } catch (e) {
-      console.log('MobileNet load failed:', e.message);
+    if (this.model) return this.model;
+    if (!this._modelPromise) {
+      this._modelPromise = (async () => {
+        await this._ensureRuntime();
+        const model = await mobilenet.load({ version: 2, alpha: 1.0 });
+        this.model = model;
+        return model;
+      })().catch((err) => {
+        this._modelPromise = null;
+        throw err;
+      });
     }
+    return this._modelPromise;
+  },
+
+  _loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('Gagal memuat library ML.'));
+      document.head.appendChild(script);
+    });
+  },
+
+  async _ensureRuntime() {
+    if (typeof tf !== 'undefined' && typeof mobilenet !== 'undefined') {
+      await tf.ready();
+      this.tfReady = true;
+      return;
+    }
+    if (!this._runtimePromise) {
+      this._runtimePromise = (async () => {
+        if (typeof tf === 'undefined') {
+          await this._loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
+        }
+        if (typeof mobilenet === 'undefined') {
+          await this._loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1');
+        }
+        await tf.ready();
+        this.tfReady = true;
+      })().catch((err) => {
+        this._runtimePromise = null;
+        throw err;
+      });
+    }
+    return this._runtimePromise;
   },
 
   /**
@@ -90,13 +121,20 @@ const MLDetector = {
    */
   async classifyDocument(canvas) {
     if (!canvas) return null;
-    if (!this.model && typeof mobilenet !== 'undefined') {
+    if (!this.model) {
+      let timeoutId;
       try {
         await Promise.race([
           this._loadModel(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
+          new Promise((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error('timeout')), 2000);
+          })
         ]);
-      } catch (_) {}
+      } catch (err) {
+        console.warn('MobileNet unavailable; using local fallback:', err);
+      } finally {
+        clearTimeout(timeoutId);
+      }
     }
 
     if (!this.model) {

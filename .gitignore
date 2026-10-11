@@ -17,7 +17,8 @@ test-dummy.png
 localhost.json
 localhost.md
 test.js
-tests/
+tests/*
+!tests/stability.spec.js
 tests-results/
 
 # Logs

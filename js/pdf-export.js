@@ -57,6 +57,51 @@ const pdfExport = {
     return pdf.output('blob');
   },
 
+  async toPdfBlobFromPages(pageCount, renderPage, qualityOverride) {
+    if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+      throw new Error('jsPDF library tidak tersedia. Coba perbarui halaman.');
+    }
+    if (!Number.isInteger(pageCount) || pageCount < 1 || typeof renderPage !== 'function') {
+      throw new Error('Tidak ada halaman valid untuk diekspor.');
+    }
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
+    const quality = qualityOverride ?? 0.85;
+
+    for (let index = 0; index < pageCount; index++) {
+      const canvas = await renderPage(index);
+      if (!canvas || canvas.width === 0 || canvas.height === 0) {
+        throw new Error(`Halaman ${index + 1} tidak valid.`);
+      }
+
+      try {
+        const imgData = this._prepareCanvas(canvas, quality);
+        const canvasRatio = canvas.width / canvas.height;
+        const pdfRatio = pdfWidth / pdfHeight;
+        let imgW, imgH;
+
+        if (canvasRatio > pdfRatio) {
+          imgW = pdfWidth - 20;
+          imgH = imgW / canvasRatio;
+        } else {
+          imgH = pdfHeight - 20;
+          imgW = imgH * canvasRatio;
+        }
+
+        if (index > 0) pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', (pdfWidth - imgW) / 2, (pdfHeight - imgH) / 2, imgW, imgH);
+      } finally {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+    }
+
+    return pdf.output('blob');
+  },
+
   /** Build image as Blob (no auto-download). */
   toImageBlob(canvas, format, qualityOverride) {
     const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
