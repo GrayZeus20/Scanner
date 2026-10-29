@@ -22,8 +22,8 @@
   <meta property="og:description" content="Web document scanner dengan deteksi sudut otomatis, filter, OCR lokal, dan ekspor PDF 100% offline di perangkat.">
   <meta property="og:image" content="icons/icon-512.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="css/style.css?v=17">
-  <link rel="stylesheet" href="css/dark-mode.css?v=17">
+  <link rel="stylesheet" href="css/style.css?v=18">
+  <link rel="stylesheet" href="css/dark-mode.css?v=18">
   <link rel="manifest" href="manifest.json">
   <script src="https://unpkg.com/lucide@0.460.0" async data-optional-icons></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" async></script>
@@ -312,9 +312,15 @@
             <i data-lucide="sparkles" aria-hidden="true"></i>
             <div>
               <strong data-i18n="hdEnhance">Upscale 2x HD (ML)</strong>
-              <small data-i18n="hdEnhanceDesc">Perbesar resolusi 2x & rekonstruksi piksel teks tajam</small>
+              <small data-i18n="hdEnhanceDesc">Perbesar resolusi & rekonstruksi piksel foto/meme/dokumen tajam</small>
             </div>
           </button>
+          <div class="upscale-modes-row" id="upscaleModesRow" aria-label="Pilih Mode Upscale">
+            <span class="upscale-label" data-i18n="upscaleMode">Mode:</span>
+            <button type="button" class="mode-btn active" data-mode="auto" data-i18n="modeAuto" title="Deteksi otomatis dokumen atau foto">Auto</button>
+            <button type="button" class="mode-btn" data-mode="photo" data-i18n="modePhoto" title="Foto / Meme / Gambar (pertahankan warna kulit & tanpa memutihkan)">Foto / Bebas</button>
+            <button type="button" class="mode-btn" data-mode="document" data-i18n="modeDoc" title="Dokumen kertas & teks (latar putih bersih & tinta tegas)">Dokumen</button>
+          </div>
           <div class="upscale-scales-row" id="upscaleScalesRow" aria-label="Pilih Skala Upscale">
             <span class="upscale-label">Skala:</span>
             <button type="button" class="scale-btn" data-scale="1.5">1.5x</button>
@@ -458,7 +464,7 @@
           </div>
           <button id="confirmPdfExport" class="btn btn-primary">
             <i data-lucide="download" aria-hidden="true"></i>
-            <span data-i18n="exportPdf">PDF</span>
+            <span data-i18n="exportPdfConfirm">Export PDF</span>
           </button>
         </div>
       </div>

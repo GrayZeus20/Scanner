@@ -255,9 +255,86 @@ const MLDetector = {
   },
 
   /**
-   * ML/Pixel-by-pixel HD Document Enhancer & Super-Resolution Upscaler
+   * Automatically detect whether image is a paper document (text/document) or photographic content (photo/meme/portrait)
+   * Based on color saturation, chromatic distribution, and background paper white ratio.
+   * @param {HTMLCanvasElement} canvas
+   * @returns {'document'|'photo'}
+   */
+  detectContentType(canvas) {
+    if (!canvas || canvas.width === 0 || canvas.height === 0) return 'document';
+    try {
+      const sampleW = Math.min(100, canvas.width);
+      const sampleH = Math.min(100, canvas.height);
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = sampleW;
+      offCanvas.height = sampleH;
+      const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+      offCtx.drawImage(canvas, 0, 0, sampleW, sampleH);
+
+      const imgData = offCtx.getImageData(0, 0, sampleW, sampleH);
+      const data = imgData.data;
+      const totalPixels = sampleW * sampleH;
+
+      let colorfulCount = 0;
+      let midtoneCount = 0;
+      let whiteBgCount = 0;
+      let totalSaturation = 0;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        const diff = max - min; // chroma
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const sat = max === 0 ? 0 : diff / max;
+
+        totalSaturation += sat;
+
+        // Distinct colors (skin tones, backgrounds, clothing, graphics)
+        if (diff > 24) {
+          colorfulCount++;
+        }
+
+        // Midtone range typical of continuous photographic tones
+        if (lum >= 65 && lum <= 195) {
+          midtoneCount++;
+        }
+
+        // Very light background typical of document paper
+        if (lum > 210 && sat < 0.12) {
+          whiteBgCount++;
+        }
+      }
+
+      const avgSat = totalSaturation / totalPixels;
+      const colorRatio = colorfulCount / totalPixels;
+      const midRatio = midtoneCount / totalPixels;
+      const whiteRatio = whiteBgCount / totalPixels;
+
+      // If document paper dominates (> 55% near-white low-sat background and low color), it's a document
+      if (whiteRatio > 0.55 && colorRatio < 0.08) {
+        return 'document';
+      }
+
+      // If there are substantial colors (photos/memes) or continuous midtones
+      if (colorRatio > 0.10 || avgSat > 0.12 || (midRatio > 0.35 && colorRatio > 0.05)) {
+        return 'photo';
+      }
+
+      return 'document';
+    } catch (e) {
+      console.warn('Content type detection error:', e);
+      return 'document';
+    }
+  },
+
+  /**
+   * ML/Pixel-by-pixel HD Document & Photo Enhancer / Super-Resolution Upscaler
    * Performs multi-scale progressive upscaling, bilateral edge-directed stroke reconstruction,
-   * anti-ringing clamping, and adaptive document paper/ink normalization.
+   * anti-ringing clamping, and mode-specific processing (Document vs Photo/Meme).
    * Powered by TensorFlow.js neural convolution with high-speed TypedArray pixel fallback.
    */
   async enhanceHD(canvas, options = {}) {
@@ -266,6 +343,15 @@ const MLDetector = {
     const srcW = canvas.width;
     const srcH = canvas.height;
     const maxDim = Math.max(srcW, srcH);
+
+    // Determine mode: 'auto' | 'photo' | 'document'
+    let requestedMode = (options.mode || 'auto').toLowerCase();
+    let effectiveMode = requestedMode;
+    if (requestedMode === 'auto') {
+      effectiveMode = this.detectContentType(canvas);
+    } else if (effectiveMode !== 'photo' && effectiveMode !== 'document') {
+      effectiveMode = 'document';
+    }
 
     // User requested scale factor (default: 2.0x, or 4.0x if small image <= 400px e.g. 300px -> 1200px)
     let requestedScale = parseFloat(options.scale);
@@ -308,7 +394,12 @@ const MLDetector = {
       midCtx.drawImage(canvas, 0, 0, midW, midH);
 
       // Intermediate unsharp convolution to prevent wide blur halos at 4x
-      this._fastUnsharpPass(midCtx, midW, midH, 1.9, -0.22);
+      // For photos: gentle edge steepening without halos; for documents: crisp ink steepening
+      if (effectiveMode === 'photo') {
+        this._fastUnsharpPass(midCtx, midW, midH, 1.35, -0.0875);
+      } else {
+        this._fastUnsharpPass(midCtx, midW, midH, 1.9, -0.22);
+      }
 
       // Stage 2: Final upscale from 2x (600px) to target (1200px)
       hdCtx.drawImage(midCanvas, 0, 0, dstW, dstH);
@@ -335,27 +426,45 @@ const MLDetector = {
           const input = tf.browser.fromPixels(hdCanvas).toFloat().div(255.0);
           const [r, g, b] = tf.split(input, 3, 2);
 
-          // 3x3 edge-directed unsharp kernel with diagonal anti-aliasing
-          // Center: +2.60, Cross: -0.32, Diag: -0.08 (Sum: 1.0)
-          const kernel = tf.tensor4d([
-            -0.08, -0.32, -0.08,
-            -0.32,  2.60, -0.32,
-            -0.08, -0.32, -0.08
-          ], [3, 3, 1, 1]);
+          if (effectiveMode === 'photo') {
+            // Photo & meme mode: edge reconstruction preserving natural skin, eyes, and text without halos
+            // Center: +1.80, Cross: -0.16, Diag: -0.04 (Sum: 1.0)
+            const kernel = tf.tensor4d([
+              -0.04, -0.16, -0.04,
+              -0.16,  1.80, -0.16,
+              -0.04, -0.16, -0.04
+            ], [3, 3, 1, 1]);
 
-          const convR = tf.conv2d(r.expandDims(0), kernel, 1, 'same');
-          const convG = tf.conv2d(g.expandDims(0), kernel, 1, 'same');
-          const convB = tf.conv2d(b.expandDims(0), kernel, 1, 'same');
-          const merged = tf.concat([convR, convG, convB], 3).squeeze(0);
+            const convR = tf.conv2d(r.expandDims(0), kernel, 1, 'same');
+            const convG = tf.conv2d(g.expandDims(0), kernel, 1, 'same');
+            const convB = tf.conv2d(b.expandDims(0), kernel, 1, 'same');
+            const merged = tf.concat([convR, convG, convB], 3).squeeze(0);
 
-          // Document adaptive tone-mapping:
-          // Paper whitening: gently lift light background (> 0.72) towards pure white (1.0)
-          const paperBoost = tf.relu(merged.sub(0.72)).mul(0.42);
-          // Ink deepening: intensify dark text strokes (< 0.45) towards rich deep black
-          const inkDeepen = tf.relu(tf.sub(0.45, merged)).mul(0.22);
+            // Clip directly - strictly NO paper whitening or ink deepening
+            return tf.clipByValue(merged, 0.0, 1.0);
+          } else {
+            // Document mode: 3x3 edge-directed unsharp kernel with diagonal anti-aliasing
+            // Center: +2.60, Cross: -0.32, Diag: -0.08 (Sum: 1.0)
+            const kernel = tf.tensor4d([
+              -0.08, -0.32, -0.08,
+              -0.32,  2.60, -0.32,
+              -0.08, -0.32, -0.08
+            ], [3, 3, 1, 1]);
 
-          const adjusted = merged.add(paperBoost).sub(inkDeepen);
-          return tf.clipByValue(adjusted, 0.0, 1.0);
+            const convR = tf.conv2d(r.expandDims(0), kernel, 1, 'same');
+            const convG = tf.conv2d(g.expandDims(0), kernel, 1, 'same');
+            const convB = tf.conv2d(b.expandDims(0), kernel, 1, 'same');
+            const merged = tf.concat([convR, convG, convB], 3).squeeze(0);
+
+            // Document adaptive tone-mapping:
+            // Paper whitening: gently lift light background (> 0.72) towards pure white (1.0)
+            const paperBoost = tf.relu(merged.sub(0.72)).mul(0.42);
+            // Ink deepening: intensify dark text strokes (< 0.45) towards rich deep black
+            const inkDeepen = tf.relu(tf.sub(0.45, merged)).mul(0.22);
+
+            const adjusted = merged.add(paperBoost).sub(inkDeepen);
+            return tf.clipByValue(adjusted, 0.0, 1.0);
+          }
         });
 
         await tf.browser.toPixels(enhancedTensor, hdCanvas);
@@ -372,9 +481,10 @@ const MLDetector = {
       const data = imgData.data;
       const copy = new Uint8ClampedArray(data);
 
-      const kCenter = 2.60;
-      const kCross = -0.32;
-      const kDiag = -0.08;
+      const isPhoto = effectiveMode === 'photo';
+      const kCenter = isPhoto ? 1.80 : 2.60;
+      const kCross = isPhoto ? -0.16 : -0.32;
+      const kDiag = isPhoto ? -0.04 : -0.08;
 
       for (let y = 1; y < dstH - 1; y++) {
         const row = y * dstW * 4;
@@ -404,21 +514,39 @@ const MLDetector = {
             const cDR = copy[idxDR + c];
 
             // Anti-ringing bounds: clamp result to neighborhood min/max with margin
-            const nMin = Math.max(0, Math.min(cCenter, cL, cR, cU, cD, cUL, cUR, cDL, cDR) - 12);
-            const nMax = Math.min(255, Math.max(cCenter, cL, cR, cU, cD, cUL, cUR, cDL, cDR) + 12);
+            const margin = isPhoto ? 8 : 12;
+            const nMin = Math.max(0, Math.min(cCenter, cL, cR, cU, cD, cUL, cUR, cDL, cDR) - margin);
+            const nMax = Math.min(255, Math.max(cCenter, cL, cR, cU, cD, cUL, cUR, cDL, cDR) + margin);
 
-            let val = cCenter * kCenter
+            let val;
+            if (isPhoto) {
+              // Photo mode: gradient-guided edge preserving
+              const grad = Math.abs(cCenter - cL) + Math.abs(cCenter - cR) + Math.abs(cCenter - cU) + Math.abs(cCenter - cD);
+              if (grad > 20) {
+                // High contrast edge (text, eyes, outlines): apply crisp unsharp
+                val = cCenter * kCenter
                     + (cL + cR + cU + cD) * kCross
                     + (cUL + cUR + cDL + cDR) * kDiag;
+              } else {
+                // Flat / smooth skin / background: very subtle sharpening to prevent noise
+                val = cCenter * 1.25 + (cL + cR + cU + cD) * -0.05 + (cUL + cUR + cDL + cDR) * -0.0125;
+              }
+            } else {
+              val = cCenter * kCenter
+                  + (cL + cR + cU + cD) * kCross
+                  + (cUL + cUR + cDL + cDR) * kDiag;
+            }
 
             if (val < nMin) val = nMin;
             if (val > nMax) val = nMax;
 
-            // Document-specific adaptive tone-mapping
-            if (val > 185) {
-              val = val + (255 - val) * 0.42; // clean paper background
-            } else if (val < 115) {
-              val = val * 0.82; // deepen and solidify ink strokes
+            // Document-specific adaptive tone-mapping (DO NOT apply on photos)
+            if (!isPhoto) {
+              if (val > 185) {
+                val = val + (255 - val) * 0.42; // clean paper background
+              } else if (val < 115) {
+                val = val * 0.82; // deepen and solidify ink strokes
+              }
             }
 
             data[idx + c] = val < 0 ? 0 : (val > 255 ? 255 : (val | 0));
@@ -433,7 +561,8 @@ const MLDetector = {
       engine: usedTf ? 'TensorFlow.js Neural Conv2D' : 'Pixel-by-Pixel Anti-Ringing Fallback',
       scale,
       width: dstW,
-      height: dstH
+      height: dstH,
+      mode: effectiveMode
     };
   },
 

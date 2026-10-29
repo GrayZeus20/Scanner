@@ -131,6 +131,91 @@ test.describe('New Enhancements Suite', () => {
     await expect(page.locator('#toolHdEnhanceBtn strong')).toContainText('4x');
   });
 
+  test('Upscale mode buttons toggle between Auto, Photo, and Document modes', async ({ page }) => {
+    // Import image
+    await page.locator('#fileInput').setInputFiles({
+      name: 'test.png',
+      mimeType: 'image/png',
+      buffer: pngBuffer,
+    });
+    await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/, { timeout: 8000 });
+
+    // Open tools sheet
+    await page.click('#navTools');
+    await expect(page.locator('#toolsSheet')).toBeVisible();
+
+    // Verify mode buttons exist (Auto, Photo, Document)
+    const modeBtns = page.locator('#upscaleModesRow .mode-btn');
+    await expect(modeBtns).toHaveCount(3);
+
+    // Initial default is Auto
+    await expect(page.locator('#upscaleModesRow .mode-btn[data-mode="auto"]')).toHaveClass(/active/);
+
+    // Click Photo mode button
+    const photoBtn = page.locator('#upscaleModesRow .mode-btn[data-mode="photo"]');
+    await photoBtn.click();
+    await expect(photoBtn).toHaveClass(/active/);
+    await expect(page.locator('#upscaleModesRow .mode-btn[data-mode="auto"]')).not.toHaveClass(/active/);
+
+    // Click Document mode button
+    const docBtn = page.locator('#upscaleModesRow .mode-btn[data-mode="document"]');
+    await docBtn.click();
+    await expect(docBtn).toHaveClass(/active/);
+    await expect(photoBtn).not.toHaveClass(/active/);
+  });
+
+  test('MLDetector detects content type and preserves colors in photo mode', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      // 1. Create document canvas: white bg + black text
+      const docCanvas = document.createElement('canvas');
+      docCanvas.width = 100;
+      docCanvas.height = 100;
+      const docCtx = docCanvas.getContext('2d');
+      docCtx.fillStyle = '#ffffff';
+      docCtx.fillRect(0, 0, 100, 100);
+      docCtx.fillStyle = '#000000';
+      docCtx.fillText('Text', 20, 50);
+
+      const detectedDoc = window.MLDetector.detectContentType(docCanvas);
+
+      // 2. Create photo/meme canvas: colorful skin tone and background
+      const photoCanvas = document.createElement('canvas');
+      photoCanvas.width = 100;
+      photoCanvas.height = 100;
+      const photoCtx = photoCanvas.getContext('2d');
+      photoCtx.fillStyle = 'rgb(180, 120, 80)';
+      photoCtx.fillRect(0, 0, 100, 100);
+      photoCtx.fillStyle = 'rgb(30, 80, 160)';
+      photoCtx.fillRect(0, 70, 100, 30);
+
+      const detectedPhoto = window.MLDetector.detectContentType(photoCanvas);
+
+      // 3. Upscale photo canvas with photo mode
+      const upPhoto = await window.MLDetector.enhanceHD(photoCanvas, { scale: 2.0, mode: 'photo' });
+      const upCtx = upPhoto.canvas.getContext('2d');
+      const pixel = upCtx.getImageData(50, 50, 1, 1).data;
+
+      return {
+        detectedDoc,
+        detectedPhoto,
+        upScale: upPhoto.scale,
+        upMode: upPhoto.mode,
+        r: pixel[0],
+        g: pixel[1],
+        b: pixel[2]
+      };
+    });
+
+    expect(result.detectedDoc).toBe('document');
+    expect(result.detectedPhoto).toBe('photo');
+    expect(result.upScale).toBe(2);
+    expect(result.upMode).toBe('photo');
+    expect(result.r).toBeGreaterThan(140);
+    expect(result.r).toBeLessThan(220);
+    expect(result.g).toBeGreaterThan(90);
+    expect(result.g).toBeLessThan(160);
+  });
+
   test('300px document image upscales 4x to 1200px with super-resolution', async ({ page }) => {
     // Generate a 300x300 canvas and run MLDetector.enhanceHD with scale 4.0
     const dims = await page.evaluate(async () => {

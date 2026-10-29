@@ -16,6 +16,7 @@
   --color-surface: #FFFFFF;
   --color-foreground: #0F172A;
   --color-muted: #F1F5F9;
+  --color-background: var(--color-muted); /* fallback token — dipakai .scale-btn */
   --color-border: #E2E8F0;
   --color-border-hover: #CBD5E1;
   --color-destructive: #DC2626;
@@ -24,7 +25,7 @@
   --color-ring: #2563EB;
   --color-text: #0F172A;
   --color-text-secondary: #64748B;
-  --color-text-tertiary: #94A3B8;
+  --color-text-tertiary: #64748B; /* was #94A3B8 — 2.56:1 gagal WCAG AA pada teks kecil */
 
   /* Subtle, restrained shadows */
   --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
@@ -91,9 +92,9 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--header-height);
-  padding: 0 16px;
-  padding-top: var(--safe-top);
+  /* height includes safe-area so inner content box never collapses on notched devices */
+  height: calc(var(--header-height) + var(--safe-top));
+  padding: var(--safe-top) 16px 0;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   z-index: 10;
@@ -297,6 +298,9 @@ html, body {
   width: 100%;
   height: 100%;
   min-height: 0;
+  /* TANPA z-index: crop/inpaint overlay (60-an) harus bersaing langsung
+     dengan bottomNav (40) di level root — konteks stacking di sini akan
+     menjebak action bar crop di bawah nav */
 }
 
 /* ─── Drag & Drop Overlay ──────────────────────────────────────── */
@@ -788,7 +792,8 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-around;
-  height: var(--nav-height);
+  /* content box tetap nav-height; inset ditambahkan agar label tidak terpotong */
+  height: calc(var(--nav-height) + var(--safe-bottom));
   padding: 0 8px;
   padding-bottom: var(--safe-bottom);
   background: var(--color-surface);
@@ -1151,6 +1156,40 @@ html, body {
   border-bottom-right-radius: 0;
 }
 
+.upscale-modes-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 4px 14px;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px dashed var(--color-border);
+}
+
+.mode-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-background);
+  color: var(--color-foreground);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.mode-btn:hover {
+  border-color: var(--color-primary);
+}
+
+.mode-btn.active {
+  background: var(--color-primary);
+  color: #ffffff;
+  border-color: var(--color-primary);
+  font-weight: 600;
+}
+
 .upscale-scales-row {
   display: flex;
   align-items: center;
@@ -1263,6 +1302,7 @@ html, body {
 
 .toast.toast-success { background: var(--color-success); }
 .toast.toast-error { background: var(--color-destructive); }
+.toast.toast-warning { background: var(--color-warning); }
 .toast.toast-info { background: var(--color-primary); }
 
 @keyframes toastIn {
@@ -1579,12 +1619,14 @@ html, body {
 }
 
 /* ─── Manual Crop Overlay & Action Bar ────────────────────────── */
+/* z-index: crop overlay (60-an) berada DI ATAS bottomNav (40) tetapi
+   DI BAWAH toast (200) & modal (1000) — tanpa lompatan 9999/10050 */
 .crop-overlay {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  z-index: 9999;
+  z-index: 60;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
@@ -1598,7 +1640,7 @@ html, body {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 9999;
+  z-index: 60;
 }
 
 .crop-polygon-outer {
@@ -1640,7 +1682,7 @@ html, body {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 10000;
+  z-index: 61;
 }
 
 .crop-handle {
@@ -1648,7 +1690,7 @@ html, body {
   width: 50px;
   height: 50px;
   background: transparent;
-  z-index: 10001;
+  z-index: 62;
   touch-action: none;
   display: flex;
   align-items: center;
@@ -1699,7 +1741,7 @@ html, body {
   border: 2px solid #FFFFFF;
   background-repeat: no-repeat;
   pointer-events: none;
-  z-index: 10020;
+  z-index: 63;
   display: none;
   box-shadow: 0 0 0 1.5px #2563EB, var(--shadow-lg);
   overflow: hidden;
@@ -1713,8 +1755,8 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  z-index: 10050 !important;
-  pointer-events: auto !important;
+  z-index: 64;
+  pointer-events: auto;
   background: rgba(15, 23, 42, 0.92);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
@@ -1722,6 +1764,9 @@ html, body {
   border-radius: var(--radius-full);
   border: 1px solid rgba(255, 255, 255, 0.15);
   box-shadow: var(--shadow-xl);
+  max-width: calc(100% - 24px);
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .crop-action-btn {
@@ -1753,18 +1798,18 @@ html, body {
 }
 
 .crop-confirm {
-  background: #16A34A !important;
-  color: #FFFFFF !important;
+  background: var(--color-success);
+  color: #FFFFFF;
 }
 
 .crop-cancel {
-  background: #DC2626 !important;
-  color: #FFFFFF !important;
+  background: var(--color-destructive);
+  color: #FFFFFF;
 }
 
 .crop-autodetect {
-  background: #2563EB !important;
-  color: #FFFFFF !important;
+  background: var(--color-accent);
+  color: #FFFFFF;
 }
 
 .crop-reset, .crop-rotate {
@@ -1807,7 +1852,7 @@ html, body {
   inset: 0;
   width: 100%;
   height: 100%;
-  z-index: 20;
+  z-index: 60;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
@@ -1862,7 +1907,7 @@ html, body {
   bottom: calc(140px + var(--safe-bottom));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 100;
+  z-index: 65;
   background: rgba(15, 23, 42, 0.9);
   padding: 8px 18px;
   border-radius: var(--radius-full);
@@ -1920,8 +1965,8 @@ html, body {
 
   /* Compact and uncrowded mobile header */
   #header {
-    padding: 0 12px;
-    height: 52px;
+    padding: var(--safe-top) 12px 0;
+    height: calc(52px + var(--safe-top));
   }
 
   .header-left .pwa-badge {
@@ -1961,13 +2006,15 @@ html, body {
     justify-content: center;
   }
 
-  .upscale-scales-row {
+    .upscale-scales-row,
+  .upscale-modes-row {
     flex-wrap: wrap;
     gap: 6px;
     padding: 6px 10px 8px 10px;
   }
 
-  .scale-btn {
+  .scale-btn,
+  .mode-btn {
     padding: 3px 8px;
     font-size: 11px;
   }
@@ -1978,7 +2025,10 @@ html, body {
     max-width: 260px;
   }
 
-  .btn {
+  /* Full-width hanya untuk konteks memang butuh lebar penuh —
+     bukan global (memecah tombol inline di header/footer/ocr-row) */
+  #emptyState .btn,
+  .session-guard-actions .btn {
     justify-content: center;
     width: 100%;
   }
@@ -2190,10 +2240,10 @@ html, body {
 }
 
 /* ─── Torch / Flash Button ───────────────────────────────────── */
+/* static layout di dalam .camera-top-bar (yang sudah absolute) —
+   tanpa position:absolute ganda yang membuatnya turun 16px+safe */
 .flash-btn {
-  position: absolute;
-  top: calc(16px + var(--safe-top, 0px));
-  right: 16px;
+  position: relative;
   width: 40px;
   height: 40px;
   border-radius: var(--radius-full);
@@ -2334,10 +2384,10 @@ html, body {
 }
 .dl-card {
   flex-direction: column;
-  align-items: flex-start !important;
-  gap: 8px !important;
-  padding: 14px 12px !important;
-  border-radius: var(--radius-md) !important;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 12px;
+  border-radius: var(--radius-md);
   min-height: 96px;
 }
 .dl-card i, .dl-card svg { width: 24px; height: 24px; color: var(--color-accent); }
@@ -2388,4 +2438,85 @@ html, body {
 
 @media (max-width: 400px) {
   .dl-grid { grid-template-columns: 1fr; }
+}
+
+/* ─── Tap-to-Focus Indicator (kamera) ─────────────────────────── */
+.focus-indicator {
+  position: absolute;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px; /* center pada titik tap */
+  border: 2px solid var(--color-accent);
+  border-radius: var(--radius-full);
+  pointer-events: none;
+  z-index: 120;
+  opacity: 0;
+}
+.focus-indicator.active {
+  animation: focusPulse 1s ease-out forwards;
+}
+@keyframes focusPulse {
+  0% { opacity: 1; transform: scale(1.25); }
+  60% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+
+/* ─── Flash Auto Label ("A" badge) ────────────────────────────── */
+.flash-label {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  color: inherit;
+  pointer-events: none;
+}
+
+/* ─── OCR result: selectable & editable text ──────────────────── */
+.ocr-result {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+/* ─── Keyboard focus ring (konsisten untuk semua tombol) ─────── */
+.btn:focus-visible,
+.icon-btn:focus-visible,
+.nav-btn:focus-visible,
+.zoom-btn:focus-visible,
+.tool-action-btn:focus-visible,
+.export-btn:focus-visible,
+.dl-card:focus-visible,
+.dl-folder-btn:focus-visible,
+.filter-action-btn:focus-visible,
+.scale-btn:focus-visible,
+.crop-action-btn:focus-visible,
+.camera-action-btn:focus-visible,
+.camera-switch-btn:focus-visible,
+.capture-btn:focus-visible,
+.flash-btn:focus-visible,
+#darkToggle:focus-visible,
+.pwa-install-btn:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+/* ─── Session card count badge (sebelumnya rule mati) ─────────── */
+.session-card::after {
+  content: attr(data-count);
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-foreground);
+  color: var(--color-surface);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }

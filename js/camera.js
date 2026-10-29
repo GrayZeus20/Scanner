@@ -267,8 +267,13 @@ const camera = {
       await this._captureCompletion;
       if (this.capturedCount > 0) {
         app.showToast(this.capturedCount + ' ' + t('photoCount'));
-        // One camera burst = one session
-        app.emit('session:create', {});
+        // One camera burst = one session — TUNGGU hasilnya: kalau gagal
+        // (quota/IDB), user harus tahu sebelum UI kamera ditutup
+        const saved = await app.emit('session:create', {});
+        if (!saved) {
+          app.showToast(t('storageError'), 'error');
+          return; // biarkan kamera terbuka agar foto tidak hilang tanpa jejak
+        }
       }
       this.resetCameraUI();
       this.stop();
@@ -279,6 +284,19 @@ const camera = {
 
   cancel() {
     if (this.capturedCount > 0) {
+      // "Batal" harus benar-benar membuang foto hasil capture sesi ini —
+      // dulu foto tetap masuk editor dan tersimpan di sesi berikutnya
+      const captured = this.capturedCount;
+      app.state.pages.splice(Math.max(0, app.state.pages.length - captured), captured);
+      app.state.currentPageIndex = Math.min(
+        app.state.currentPageIndex,
+        Math.max(0, app.state.pages.length - 1)
+      );
+      app.state.dirty = app.state.pages.length > 0;
+      if (app.state.pages.length > 0) {
+        app.updatePagesTray();
+        app.renderPage(app.state.currentPageIndex);
+      }
       app.showToast(t('captureCancelled'));
     }
     this.resetCameraUI();

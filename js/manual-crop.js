@@ -29,6 +29,7 @@ const manualCrop = {
 
   // Rotation state
   _rotation: 0,
+  _selectionRotated: false, // true setelah rotateStep memutar corners secara geometris
 
   state: {
     resizing: false,
@@ -116,14 +117,29 @@ const manualCrop = {
   },
 
   rotateStep() {
+    // Rotasi beneran memutar area seleksi — bukan sekadar CSS visual.
+    // Corners dirotasi di sekitar pusat quad sehingga hasil crop
+    // = persis yang terlihat di layar (tanpa wedge transparan).
+    this._selectionRotated = true;
     this._rotation = (this._rotation + 15) % 360;
     if (this._rotation > 180) this._rotation -= 360;
-    if (this._svg) {
-      this._svg.style.transform = `rotate(${this._rotation}deg)`;
+
+    const c = this.state.corners;
+    const cx = (c.tl.x + c.tr.x + c.bl.x + c.br.x) / 4;
+    const cy = (c.tl.y + c.tr.y + c.bl.y + c.br.y) / 4;
+    const rad = (15 * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const keys = ['tl', 'tr', 'bl', 'br'];
+    for (const k of keys) {
+      const dx = c[k].x - cx;
+      const dy = c[k].y - cy;
+      c[k].x = cx + dx * cos - dy * sin;
+      c[k].y = cy + dx * sin + dy * cos;
     }
-    if (this.area) {
-      this.area.style.transform = `rotate(${this._rotation}deg)`;
-    }
+
+    this._updateCache();
+    this.renderQuadrilateral();
   },
 
   onCornerStart(e) {
@@ -390,6 +406,7 @@ const manualCrop = {
       this._svg.style.transform = '';
     }
     this._rotation = 0;
+    this._selectionRotated = false;
 
     this.state.corners = {
       tl: screenCorners[0],
@@ -440,6 +457,7 @@ const manualCrop = {
       this._svg.style.transform = '';
     }
     this._rotation = 0;
+    this._selectionRotated = false;
 
     const x1 = cx + offX;
     const y1 = cy + offY;
@@ -519,8 +537,10 @@ const manualCrop = {
       outCanvas.getContext('2d').drawImage(srcCanvas, minX, minY, w, h, 0, 0, w, h);
     }
 
-    // Apply rotation if non-zero
-    if (Math.abs(this._rotation) > 0.5) {
+    // _rotation hanya menghitung output apabila sumber quad-nya aksial
+    // (0°) — seleksi yang sudah dirotasi via rotateStep SUDAH membentuk
+    // polygon baru di layar, sehingga warp hasilnya sudah sesuai visual.
+    if (Math.abs(this._rotation) > 0.5 && !this._selectionRotated) {
       const radians = (this._rotation * Math.PI) / 180;
       const cos = Math.abs(Math.cos(radians));
       const sin = Math.abs(Math.sin(radians));

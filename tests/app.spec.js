@@ -429,14 +429,30 @@ test('back-to-home warns on unsaved data, cancel stays in editor, discard goes h
 
 test('undo and redo are locked while an import is running', async ({ page }) => {
   await page.goto('/');
+
+  const pngBuffer = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+    'base64'
+  );
+  await page.locator('#fileInput').setInputFiles({
+    name: 'undo_lock.png',
+    mimeType: 'image/png',
+    buffer: pngBuffer,
+  });
+  await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/, { timeout: 8000 });
+
   const result = await page.evaluate(async () => {
-    app.state.undoStack.push({ fake: true });
+    // Undo/redo kini per-halaman (page._undoStack)
+    const page0 = app.state.pages[0];
+    if (page0 && !page0._undoStack) { page0._undoStack = []; page0._redoStack = []; }
+    const stack = page0 ? page0._undoStack : null;
+    if (stack) stack.push({ fake: true });
     app._importing = true;
     app.syncUndoRedoLock();
     const disabledWhileImporting = document.getElementById('undoBtn').disabled && document.getElementById('redoBtn').disabled;
-    const lenBefore = app.state.undoStack.length;
+    const lenBefore = stack ? stack.length : 0;
     await app.undo();
-    const lenAfter = app.state.undoStack.length;
+    const lenAfter = stack ? stack.length : 0;
     app._importing = false;
     app.syncUndoRedoLock();
     const enabledAfter = !document.getElementById('undoBtn').disabled;

@@ -1,10 +1,12 @@
-const CACHE_NAME = 'webscanner-v17';
+const CACHE_NAME = 'webscanner-v18';
 
 const LOCAL_ASSETS = [
   './',
   'index.html',
-  'css/style.css',
-  'css/dark-mode.css',
+  // Kunci cache HARUS sama dengan URL request di index.html (?v=18),
+  // kalau tidak, cold start offline tidak match → halaman tanpa style
+  'css/style.css?v=18',
+  'css/dark-mode.css?v=18',
   'js/config.js',
   'js/i18n.js',
   'js/camera.js',

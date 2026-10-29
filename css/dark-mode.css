@@ -7,7 +7,7 @@ body.dark-mode,
   --color-foreground: #F8FAFC;
   --color-text: #F8FAFC;
   --color-text-secondary: #94A3B8;
-  --color-text-tertiary: #64748B;
+  --color-text-tertiary: #94A3B8; /* was #64748B — 4.14:1 gagal AA pada teks kecil */
   --color-muted: #1A1E29;
   --color-border: #222734;
   --color-border-hover: #32394A;
@@ -54,11 +54,24 @@ body.dark-mode {
   border-color: var(--color-border);
 }
 
+/* Dark-mode sheet shadow: up-cast hanya di desktop (drawer kanan) */
 .dark-mode .sheet-panel {
   background: var(--color-surface);
   border-color: var(--color-border);
-  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
 }
+
+@media (min-width: 769px) {
+  .dark-mode .sheet-panel {
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Dark-mode toast: pertahankan warna semantik success/error/warning */
+.dark-mode .toast { background: #F8FAFC; color: #090B10; }
+.dark-mode .toast.toast-success { background: #22C55E; color: #052e16; }
+.dark-mode .toast.toast-error { background: #EF4444; color: #ffffff; }
+.dark-mode .toast.toast-warning { background: #EAB308; color: #422006; }
+.dark-mode .toast.toast-info { background: #F8FAFC; color: #090B10; }
 
 .dark-mode .canvas-wrapper {
   background: var(--color-bg);
@@ -111,9 +124,9 @@ body.dark-mode {
 }
 
 .dark-mode .scale-btn.active {
-  background: #2563EB;
+  background: var(--color-accent);
   color: #ffffff;
-  border-color: #2563EB;
+  border-color: var(--color-accent);
 }
 
 .dark-mode .nav-btn {

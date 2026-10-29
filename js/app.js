@@ -36,8 +36,8 @@ const app = {
     lastPinchDist: 0,
     isCropping: false,
     upscaleScale: 2.0,
-    undoStack: [],
-    redoStack: [],
+    upscaleMode: 'auto',
+    /* undo/redo kini per-halaman (page._undoStack / page._redoStack) */
     maxUndoSteps: 30
   },
 
@@ -91,17 +91,31 @@ const app = {
     const el = document.getElementById(id);
     if (!el) return;
     if (show) {
-      // Create backdrop
-      const backdrop = document.createElement('div');
-      backdrop.className = 'sheet-backdrop';
-      backdrop.id = 'sheetBackdrop';
-      backdrop.addEventListener('click', () => this.toggleSheet(id, false));
-      document.body.appendChild(backdrop);
+      // Hanya satu sheet terbuka pada satu waktu — tutup sheet lain dulu
+      // (mencegah dobel backdrop / sheet kedua kehilangan backdrop saat race)
+      ['toolsSheet', 'filterSheet', 'ocrSheet', 'exportSheet'].forEach((other) => {
+        if (other !== id) {
+          const otherEl = document.getElementById(other);
+          if (otherEl && !otherEl.classList.contains('hidden')) {
+            this._closeSheetNow(otherEl);
+          }
+        }
+      });
+
+      let backdrop = document.getElementById('sheetBackdrop');
+      if (!backdrop) {
+        backdrop = document.createElement('div');
+        backdrop.className = 'sheet-backdrop';
+        backdrop.id = 'sheetBackdrop';
+        document.body.appendChild(backdrop);
+      }
+      // backdrop selalu milik sheet yang sedang terbuka
+      backdrop.onclick = () => this.toggleSheet(id, false);
 
       el.classList.remove('hidden');
       el.removeAttribute('inert');
       el.setAttribute('aria-hidden', 'false');
-      el.setAttribute('aria-expanded', 'true');
+      delete el.dataset.ariaExpanded; // role=dialog tidak punya aria-expanded
       lucide.createIcons({ root: el });
 
       // Focus first interactive element
@@ -114,18 +128,25 @@ const app = {
       if (backdrop) backdrop.classList.add('backdrop-exit');
 
       setTimeout(() => {
-        el.classList.remove('sheet-exit');
-        el.classList.add('hidden');
-        el.setAttribute('inert', '');
-        el.setAttribute('aria-hidden', 'true');
-        el.setAttribute('aria-expanded', 'false');
-        document.activeElement?.blur();
-
-        // Remove backdrop
-        const bd = document.getElementById('sheetBackdrop');
-        if (bd) bd.remove();
+        // Sheet mungkin sudah ditutup paksa oleh sheet lain — jangan
+        // tambahkan hidden ke sheet yang justru sedang terbuka
+        if (el.classList.contains('sheet-exit')) {
+          this._closeSheetNow(el);
+        }
+        // Hapus backdrop hanya bila tidak ada sheet lain yang sedang memakainya
+        const anyOpen = ['toolsSheet', 'filterSheet', 'ocrSheet', 'exportSheet']
+          .some((sid) => !document.getElementById(sid)?.classList.contains('hidden'));
+        if (!anyOpen) document.getElementById('sheetBackdrop')?.remove();
       }, 200);
     }
+  },
+
+  /** Tutup sheet seketika tanpa animasi (cleanup tanpa race timeout). */
+  _closeSheetNow(el) {
+    el.classList.remove('sheet-exit');
+    el.classList.add('hidden');
+    el.setAttribute('inert', '');
+    el.setAttribute('aria-hidden', 'true');
   },
 
   escapeHtml(value) {
@@ -164,7 +185,10 @@ const app = {
           await storage.legacyMigrateToSessions();
         }
         const after = await storage.getSessions();
-        if (after.length > 0) this.showHome();
+        // Jangan tampilkan home saat kamera sedang aktif (shortcut ?action=camera)
+        if (after.length > 0 && document.getElementById('cameraView')?.classList.contains('hidden')) {
+          this.showHome();
+        }
       } catch (err) {
         console.warn('Migration skipped:', err);
       }
@@ -196,7 +220,8 @@ const app = {
     // PWA Install prompt and offline/online status
     this.initPwaInstall();
 
-    // PWA shortcut navigation actions
+    // PWA shortcut navigation actions — jalankan SETELAH storage.init selesai
+    // agar showHome() tidak menutup kamera yang baru terbuka (race saat cold start)
     try {
       const urlParams = new URLSearchParams(window.location.search);
       const action = urlParams.get('action');
@@ -338,6 +363,29 @@ const app = {
           const sheet = document.getElementById(sheetId);
           if (sheet && !sheet.classList.contains('hidden')) {
             this.toggleSheet(sheetId, false);
+            break;
+          }
+        }
+        // Modal dialog (guard / PDF preview / permission) juga harus bisa
+        // ditutup dengan Escape — sebelumnya keyboard user terjebak
+        const modals = [
+          ['sessionGuardModal', () => this.closeSessionGuard()],
+          ['pdfPreviewModal', () => {
+            const m = document.getElementById('pdfPreviewModal');
+            m.classList.add('hidden');
+            m.setAttribute('inert', '');
+            this.releasePdfPreview();
+          }],
+          ['permissionModal', () => {
+            const m = document.getElementById('permissionModal');
+            m.classList.add('hidden');
+            m.setAttribute('inert', '');
+          }]
+        ];
+        for (const [modalId, close] of modals) {
+          const modal = document.getElementById(modalId);
+          if (modal && !modal.classList.contains('hidden')) {
+            close();
             break;
           }
         }
@@ -505,6 +553,15 @@ const app = {
       this.enhanceHd(this.state.upscaleScale || 2.0);
       this.toggleSheet('toolsSheet', false);
     });
+    document.querySelectorAll('#upscaleModesRow .mode-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('#upscaleModesRow .mode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const m = btn.dataset.mode || 'auto';
+        this.state.upscaleMode = m;
+      });
+    });
     document.querySelectorAll('#upscaleScalesRow .scale-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -654,6 +711,7 @@ const app = {
       stopInertia();
       if (e.touches.length === 2) {
         lastDist = this.getTouchDistance(e.touches);
+        this.state.isPanning = false; // gestur pinch dimulai — batalkan pan
       } else if (e.touches.length === 1) {
         this.state.isPanning = true;
         this.state.panStartX = e.touches[0].clientX - this.state.panX;
@@ -669,6 +727,9 @@ const app = {
         if (this.state.isCropping) return;
         e.preventDefault();
         const dist = this.getTouchDistance(e.touches);
+        // lastDist bisa 0 kalau touchstart tadi early-return (gestur mulai
+        // di atas kontrol) — hindari div-by-zero yang melonjakkan zoom ke 500%
+        if (!lastDist || dist <= 0) { lastDist = dist || 1; return; }
         const mid = this.getTouchMidpoint(e.touches);
         this.setZoom(this.state.zoom * (dist / lastDist), mid.x, mid.y);
         lastDist = dist;
@@ -777,7 +838,7 @@ const app = {
     }
     
     this.updatePan();
-    this.showToast(`Zoom: ${Math.round(this.state.zoom * 100)}%`);
+    // Tanpa toast per-frame: spam pada tiap wheel tick / pinch frame
   },
 
   resetZoom() {
@@ -902,7 +963,8 @@ const app = {
       // If editor already has an open unsaved doc, guard before appending new pages
       if (this.state.pages.length > 0 && this.state.dirty) {
         this._pendingBatch = pages;
-        this.showSessionGuard(pages.length, { mode: 'import' });
+        // Deskripsi modal = jumlah gambar yang SEDANG TERBUKA, bukan ukuran batch
+        this.showSessionGuard(this.state.pages.length, { mode: 'import' });
         return;
       }
 
@@ -966,7 +1028,8 @@ const app = {
     if (!page) return;
     if (page.pendingSrc) {
       // keep pendingSrc until img.onload attaches originalImage (session:create may map it first)
-      this.loadImageFromSrc(page.pendingSrc, { keepSession: true, index });
+      // opts.enhance: hanya halaman pertama sesi/import yang di-auto-enhance
+      this.loadImageFromSrc(page.pendingSrc, { keepSession: true, index, enhance: index === this.state.currentPageIndex });
     } else if (page.originalImage) {
       this.renderPage(index);
     }
@@ -988,14 +1051,18 @@ const app = {
           const page = { originalImage: img, currentImageData: null };
           this.state.pages.push(page);
           this.state.currentPageIndex = this.state.pages.length - 1;
-          this.state.activeSessionId = null;
+          // CATATAN: activeSessionId sengaja TIDAK di-reset — capture baru
+          // selama sesi masih terbuka harus update sesi yang sama, bukan
+          // membuat sesi duplikat (regresi session:create).
         }
 
         try {
           this.showEditor();
           this.updatePagesTray();
           this.renderPage(this.state.currentPageIndex);
-          this.autoEnhance();
+          // Auto-enhance hanya untuk gambar baru (capture/impor) —
+          // bukan setiap lazy-load halaman (dulu menimpa filter user saat ganti halaman)
+          if (opts.enhance !== false) this.autoEnhance();
         } catch (err) {
           console.error('Render error:', err);
           this.showToast(t('error'), 'error');
@@ -1136,6 +1203,13 @@ const app = {
   },
 
   reorderPages(from, to) {
+    // Guard: parseInt dataTransfer bisa NaN untuk drop rusak —
+    // splice(NaN,1) dulu diam-diam menghapus halaman pertama
+    if (!Number.isInteger(from) || from < 0 || from >= this.state.pages.length) return;
+    if (!Number.isInteger(to) || to < 0 || to >= this.state.pages.length || from === to) {
+      this.updatePagesTray();
+      return;
+    }
     const page = this.state.pages.splice(from, 1)[0];
     this.state.pages.splice(to, 0, page);
     this.state.currentPageIndex = to;
@@ -1348,7 +1422,9 @@ const app = {
   },
 
   async performExport(format) {
+    if (this._exporting) return; // guard double-submission (dobel klik save)
     if (this.state.pages.length === 0) { this.showToast(t('noPagesYet'), 'error'); return; }
+    this._exporting = true;
     const qualitySlider = document.getElementById('exportQuality');
     const quality = qualitySlider ? parseInt(qualitySlider.value) / 100 : 0.85;
     const base = `${this.sessionLabel()}_${new Date().toISOString().slice(0, 10)}`;
@@ -1393,6 +1469,8 @@ const app = {
       console.error('Export error:', err);
       this.showDlProgress(false);
       this.showToast(t('error') + ': ' + err.message, 'error');
+    } finally {
+      this._exporting = false;
     }
   },
 
@@ -1476,13 +1554,20 @@ const app = {
       }
 
       page.currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      // Snapshot filter halaman ini — dipakai renderPageForPdf agar filter
+      // tidak bocor antar halaman saat ekspor multi-halaman
+      page._filters = { ...this.state.filters };
     } finally {
       this._filterPending = false;
     }
   },
 
   async applySharpness(amount) {
-    if (this.state.isFilterWorkerRunning) return;
+    // Jangan silent no-op: tunggu worker selesai lalu jalankan — kalau tidak,
+    // ketajaman tidak pernah diterapkan ke currentImageData/ekspor
+    while (this.state.isFilterWorkerRunning) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
     this.state.isFilterWorkerRunning = true;
 
     // Add progress UI
@@ -1563,6 +1648,8 @@ const app = {
     overlay.classList.remove('hidden');
     actionBar.classList.remove('hidden');
     this.state.isCropping = true;
+    // Zoom controls mengganggu & bertabrakan dengan crop action bar di layar kecil
+    document.getElementById('zoomControls')?.classList.add('hidden');
     
     manualCrop.init();
     manualCrop.resetCropArea();
@@ -1606,6 +1693,7 @@ const app = {
     document.getElementById('cropActionBar')?.classList.add('hidden');
     this.state.isCropping = false;
     manualCrop.hideMagnifier();
+    document.getElementById('zoomControls')?.classList.remove('hidden');
   },
 
   async autoCrop() {
@@ -1995,8 +2083,6 @@ const app = {
       this.state.currentPageIndex = 0;
       this.state.activeSessionId = session.id;
       this.state.dirty = false;
-      this.state.undoStack = [];
-      this.state.redoStack = [];
       this.updateUndoRedoUI();
       this.resetFiltersSilent();
       this.showEditor();
@@ -2020,12 +2106,10 @@ const app = {
   },
 
   startNewSession() {
-    this.state.pages = [];
+    this.state.pages = []; // pages lama (beserta undo stack per-halaman) ikut terbuang
     this.state.currentPageIndex = -1;
     this.state.activeSessionId = null;
     this.state.dirty = false;
-    this.state.undoStack = [];
-    this.state.redoStack = [];
     this.updateUndoRedoUI();
     this.resetFiltersSilent();
     document.getElementById('historyView').classList.add('hidden');
@@ -2063,8 +2147,9 @@ const app = {
       else if (pending.mode === 'new') this.startNewSession();
       else if (pending.mode === 'home') this.startNewSession();
       else if (pending.mode === 'import') {
-        this.state.pages = [];
+        this.state.pages = []; // buang juga undo stack per-halaman
         this.state.activeSessionId = null;
+        this.state.dirty = false;
         if (batch) this._applyBatch(batch, []);
       }
     };
@@ -2247,6 +2332,7 @@ const app = {
     document.getElementById('inpaintOverlay').classList.remove('hidden');
     document.getElementById('inpaintActionBar').classList.remove('hidden');
     this.state.isCropping = true;
+    document.getElementById('zoomControls')?.classList.add('hidden');
 
     inpaint.init();
     inpaint.reset();
@@ -2292,6 +2378,7 @@ const app = {
     document.getElementById('inpaintActionBar')?.classList.add('hidden');
     this.state.isCropping = false;
     inpaint.clear();
+    document.getElementById('zoomControls')?.classList.remove('hidden');
   },
 
   async enhanceHd(scale) {
@@ -2318,7 +2405,8 @@ const app = {
       const oldW = this.canvas.width;
       const oldH = this.canvas.height;
 
-      const result = await window.MLDetector.enhanceHD(this.canvas, { scale: scaleNum });
+      const mode = this.state.upscaleMode || 'auto';
+      const result = await window.MLDetector.enhanceHD(this.canvas, { scale: scaleNum, mode });
       if (!result || !result.canvas) {
         throw new Error('Gagal memproses peningkatan pixel');
       }
@@ -2337,7 +2425,8 @@ const app = {
       await new Promise(res => { newImg.onload = res; });
       this.setCurrentPageImage(newImg);
 
-      const msg = `${t('hdDone')} (${oldW}×${oldH} → ${result.width}×${result.height} px, ${result.scale}x)`;
+      const modeLabel = result.mode === 'photo' ? (t('modePhoto') || 'Foto') : (t('modeDoc') || 'Dokumen');
+      const msg = `${t('hdDone')} [${modeLabel}] (${oldW}×${oldH} → ${result.width}×${result.height} px, ${result.scale}x)`;
       this.showToast(msg, 'success');
     } catch (err) {
       console.error('HD enhance error:', err);
@@ -2346,6 +2435,21 @@ const app = {
   },
 
   // --- Undo/Redo ---
+  // Stack di-scope per halaman: snapshot page 1 tidak boleh dipulihkan ke page 2
+  pageUndoStack() {
+    const page = this.state.pages[this.state.currentPageIndex];
+    if (!page) return null;
+    if (!page._undoStack) { page._undoStack = []; page._redoStack = []; }
+    return page._undoStack;
+  },
+
+  pageRedoStack() {
+    const page = this.state.pages[this.state.currentPageIndex];
+    if (!page) return null;
+    if (!page._undoStack) { page._undoStack = []; page._redoStack = []; }
+    return page._redoStack;
+  },
+
   saveUndoState() {
     const page = this.state.pages[this.state.currentPageIndex];
     if (!page || !page.originalImage) return;
@@ -2358,37 +2462,50 @@ const app = {
       filters: JSON.parse(JSON.stringify(this.state.filters))
     };
 
-    this.state.undoStack.push(stateSnapshot);
-    if (this.state.undoStack.length > this.state.maxUndoSteps) {
-      this.state.undoStack.shift(); // Remove oldest
+    const undoStack = this.pageUndoStack();
+    if (!undoStack) return;
+    undoStack.push(stateSnapshot);
+    if (undoStack.length > this.state.maxUndoSteps) {
+      undoStack.shift(); // Remove oldest
     }
-    this.state.redoStack = []; // Clear redo on new action
+    page._redoStack = []; // Clear redo on new action
     this.trimUndoHistory();
     this.updateUndoRedoUI();
   },
 
   trimUndoHistory() {
     const maxBytes = config.MAX_UNDO_BYTES;
-    const history = () => this.state.undoStack.concat(this.state.redoStack);
+    const allPages = this.state.pages;
+    const history = () => allPages.flatMap((p) => (p._undoStack || []).concat(p._redoStack || []));
     const bytes = (state) => state.bytes || Math.ceil((state.imageData?.length || 0) * 0.75);
 
     let snapshots = history();
     let totalBytes = snapshots.reduce((sum, state) => sum + bytes(state), 0);
     while (totalBytes > maxBytes && snapshots.length > 1) {
-      const oldestUndo = this.state.undoStack.shift();
-      const removed = oldestUndo || this.state.redoStack.shift();
-      if (!removed) break;
-      totalBytes -= bytes(removed);
+      // buang snapshot tertua dari halaman mana pun
+      let oldest = null;
+      for (const p of allPages) {
+        if (p._undoStack?.length) { oldest = p._undoStack.shift(); break; }
+      }
+      if (!oldest) {
+        for (const p of allPages) {
+          if (p._redoStack?.length) { oldest = p._redoStack.shift(); break; }
+        }
+      }
+      if (!oldest) break;
+      totalBytes -= bytes(oldest);
       snapshots = history();
     }
   },
 
   async undo() {
     if (this._importing) return;
-    if (this.state.undoStack.length === 0) return;
-
     const page = this.state.pages[this.state.currentPageIndex];
-    if (!page) return;
+    const undoStack = this.pageUndoStack();
+    if (!page || !undoStack || undoStack.length === 0) return;
+
+    // Guard: jangan sampai originalImage belum ter-attach (lazy load)
+    if (!page.originalImage?.src) return;
 
     // Save current state to redo stack
     const currentState = {
@@ -2397,15 +2514,15 @@ const app = {
       canvasHeight: this.canvas.height,
       filters: JSON.parse(JSON.stringify(this.state.filters))
     };
-    this.state.redoStack.push(currentState);
+    page._redoStack.push(currentState);
 
     // Restore previous state
-    const prevState = this.state.undoStack.pop();
+    const prevState = undoStack.pop();
     try {
       await this.restoreState(prevState);
     } catch (err) {
-      this.state.undoStack.push(prevState);
-      this.state.redoStack.pop();
+      undoStack.push(prevState);
+      page._redoStack.pop();
       this.showToast(t('error') + ': ' + err.message, 'error');
       this.updateUndoRedoUI();
       return;
@@ -2416,10 +2533,11 @@ const app = {
 
   async redo() {
     if (this._importing) return;
-    if (this.state.redoStack.length === 0) return;
-
     const page = this.state.pages[this.state.currentPageIndex];
-    if (!page) return;
+    const redoStack = this.pageRedoStack();
+    if (!page || !redoStack || redoStack.length === 0) return;
+
+    if (!page.originalImage?.src) return;
 
     // Save current state to undo stack
     const currentState = {
@@ -2428,15 +2546,15 @@ const app = {
       canvasHeight: this.canvas.height,
       filters: JSON.parse(JSON.stringify(this.state.filters))
     };
-    this.state.undoStack.push(currentState);
+    page._undoStack.push(currentState);
 
     // Restore next state
-    const nextState = this.state.redoStack.pop();
+    const nextState = redoStack.pop();
     try {
       await this.restoreState(nextState);
     } catch (err) {
-      this.state.redoStack.push(nextState);
-      this.state.undoStack.pop();
+      redoStack.push(nextState);
+      page._undoStack.pop();
       this.showToast(t('error') + ': ' + err.message, 'error');
       this.updateUndoRedoUI();
       return;
@@ -2504,10 +2622,11 @@ const app = {
   },
 
   updateUndoRedoUI() {
+    const page = this.state.pages[this.state.currentPageIndex];
     const undoBtn = document.getElementById('undoBtn');
     const redoBtn = document.getElementById('redoBtn');
-    if (undoBtn) undoBtn.disabled = this.state.undoStack.length === 0;
-    if (redoBtn) redoBtn.disabled = this.state.redoStack.length === 0;
+    if (undoBtn) undoBtn.disabled = !page || (page._undoStack?.length || 0) === 0;
+    if (redoBtn) redoBtn.disabled = !page || (page._redoStack?.length || 0) === 0;
   },
 
   // --- PDF Preview ---
@@ -2556,6 +2675,8 @@ const app = {
 
     // Confirm export → folder Scanner (fallback: browser download)
     document.getElementById('confirmPdfExport').onclick = async () => {
+      if (this._exporting) return; // guard dobel klik
+      this._exporting = true;
       modal.classList.add('hidden');
       modal.setAttribute('inert', '');
       const qualitySlider = document.getElementById('exportQuality');
@@ -2583,6 +2704,7 @@ const app = {
         this.toggleSheet('exportSheet', false);
         this.showToast(t('error'), 'error');
       } finally {
+        this._exporting = false;
         this.releasePdfPreview();
       }
     };
@@ -2639,7 +2761,9 @@ const app = {
   async renderPageForPdf(index, maxDimension = config.IMAGE_MAX_SIZE) {
     const page = this.state.pages[index];
     if (!page) return null;
-    const filters = this.state.filters;
+    // Filter PER-HALAMAN: dulu filter halaman aktif bocor ke semua halaman.
+    // Halaman yang belum pernah difilter memakai snapshot filters-nya sendiri.
+    const filters = page._filters || this.state.filters;
     let img = page.originalImage;
     if (!img && page.pendingSrc) {
       img = await new Promise((resolve, reject) => {
@@ -2679,7 +2803,45 @@ const app = {
       }
       ctx.putImageData(imageData, 0, 0);
     }
+
+    // Ketajaman ikut diekspor — sebelumnya halaman yang di-sharpen tampil
+    // soft di PDF/JPG karena path ekspor melewati applySharpness
+    if (filters.sharpness > 0) {
+      try {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const sharpened = this._sharpenImageData(imageData, filters.sharpness);
+        ctx.putImageData(sharpened, 0, 0);
+      } catch (err) {
+        console.warn('Export sharpness skipped:', err);
+      }
+    }
     return canvas;
+  },
+
+  /** Convolution sharpen sinkron (tanpa worker) untuk path ekspor. */
+  _sharpenImageData(imageData, amount) {
+    const { width, height } = imageData;
+    const src = imageData.data;
+    const out = new ImageData(width, height);
+    const dst = out.data;
+    const k = amount / 100; // 0..1
+    const center = 1 + 4 * k;
+    const neighbor = -k;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        for (let ch = 0; ch < 3; ch++) {
+          const up = y > 0 ? src[i - width * 4 + ch] : src[i + ch];
+          const down = y < height - 1 ? src[i + width * 4 + ch] : src[i + ch];
+          const left = x > 0 ? src[i - 4 + ch] : src[i + ch];
+          const right = x < width - 1 ? src[i + 4 + ch] : src[i + ch];
+          dst[i + ch] = Math.max(0, Math.min(255,
+            center * src[i + ch] + neighbor * (up + down + left + right)));
+        }
+        dst[i + 3] = src[i + 3];
+      }
+    }
+    return out;
   },
 
   async renderAllPagesForPdf(maxDimension = config.IMAGE_MAX_SIZE) {

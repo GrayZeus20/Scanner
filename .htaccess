@@ -1,0 +1,18 @@
+# Laragon project hardening — 2026-10-17 (audit keamanan wave 2).
+# Fix ekspos LAN: .env / .env.local / .git/config ke-serve HTTP 200.
+# Lapis utama per-project; lapis global di httpd.conf nyusul.
+
+Options -Indexes
+
+<IfModule mod_authz_core.c>
+    # File dot (.env, .env.local, .gitignore, .htaccess, ...) — tolak.
+    <FilesMatch "^\.">
+        Require all denied
+    </FilesMatch>
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    # Direktori dot (.git, .vercel, .codegraph, .claude, ...) — tolak, kecuali .well-known (ACME).
+    RewriteRule "(^|/)\.(?!well-known)" - [F]
+</IfModule>
