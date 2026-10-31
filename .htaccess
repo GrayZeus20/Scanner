@@ -1,6 +1,8 @@
 # Laragon project hardening — 2026-10-17 (audit keamanan wave 2).
 # Fix ekspos LAN: .env / .env.local / .git/config ke-serve HTTP 200.
 # Lapis utama per-project; lapis global di httpd.conf nyusul.
+#
+# 2026-10-30 (offline hardening): MIME + Cache-Control untuk model ONNX & kode app.
 
 Options -Indexes
 
@@ -15,4 +17,31 @@ Options -Indexes
     RewriteEngine On
     # Direktori dot (.git, .vercel, .codegraph, .claude, ...) — tolak, kecuali .well-known (ACME).
     RewriteRule "(^|/)\.(?!well-known)" - [F]
+</IfModule>
+
+# ── MIME: .onnx tidak terdaftar di mime.types Apache ──
+# Tanpa ini Apache mengirim tanpa Content-Type; fetch + cache.add() tetap jalan,
+# tapi beberapa CDN/proxy menolak body tanpa tipe. octet-stream = binary generik.
+AddType application/octet-stream .onnx
+
+<IfModule mod_headers.c>
+    # Model ML: binary imutabel. Nama file = identitas versi, isinya tidak pernah
+    # berubah in-place. Cache 1 tahun → tidak pernah di-revalidate tiap kunjungan.
+    <FilesMatch "\.onnx$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+
+    # Kode app: revalidasi via ETag tiap load. Update langsung kepakai,
+    # tapi tidak ada transfer ulang selama file tidak berubah (304).
+    <FilesMatch "\.(html|css|js|json)$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+
+    # Service worker: browser wajib cek versi baru, jangan pernah pakai copy lama.
+    <FilesMatch "^sw\.js$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+    </FilesMatch>
+
+    # Hardening: jangan tebak tipe dari isi file.
+    Header set X-Content-Type-Options "nosniff"
 </IfModule>

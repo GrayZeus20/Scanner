@@ -19,6 +19,7 @@ localhost.md
 test.js
 tests/*
 !tests/stability.spec.js
+!tests/hd-enhance.spec.js
 tests-results/
 
 # Logs
@@ -36,3 +37,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Scratch workspace
+.scratch/

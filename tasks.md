@@ -36,5 +36,22 @@
 - [x] 28. Test crop: dots ikut corner, handle tetap dalam wrapper setelah drag ke tepi [tests/crop.spec.js]
 - [x] 29. sw v15→v16 + ?v= bump, suite hijau [sw.js, index.html] — bump done, crop suite 7/7 passed
 
+## Plan batch 4 (offline hardening sebelum model ONNX disambung)
+- [ ] 30. `.htaccess`: AddType .onnx + mod_expires + Cache-Control immutable model, must-revalidate css/js [.htaccess]
+- [ ] 31. `navigator.storage.persist()`: state `storagePersisted`, owner app, dipanggil dari initPwaInstall, ikut dumpState [js/app.js]
+- [ ] 32. Test: persist state terisi + dumpState punya key + header onnx terverifikasi curl [tests/, .htaccess]
+- [ ] 33. Runtime proof: node --check, curl -I, playright suite hijau
+
+## Plan batch 5 (logika HD upscale foto/meme: tajam tanpa "pecah", kulit tetap mulus)
+- [x] 34. `_photoTextSafePass`: luma-only delta (hue aman) + unsharp 3 skala (3x3/5x5/9x9) streaming ring buffer, gate dua skala (5x5 & 9x9) supaya grain JPEG tidak ikut ditajamkan [js/ml-detector.js]
+- [x] 35. `_deblockSource` (Stage 0): ratakan blok/seam JPEG di resolusi sumber sebelum upscale (hanya area datar, dev<7 & variansi<36) [js/ml-detector.js]
+- [x] 36. `_chromaSmooth`: box-mean Cb/Cr radius ikut skala (2.5x) buang blotch warna JPEG; luma tetap [js/ml-detector.js]
+- [x] 37. Anti-ringing clamp min/max 3x3 (+margin) + flat branch menarik ke rata lokal (fix tanda: c - det9*k, bukan +) [js/ml-detector.js]
+- [x] 38. TF conv2d hanya untuk dokumen; foto deterministik via TypedArray pipeline. Hasil HD disimpan PNG (<=2.5MP) / JPEG 0.97, `state.dirty=true` [js/ml-detector.js, js/app.js]
+- [x] 39. Test `tests/hd-enhance.spec.js` (6): streaming==referensi full-array, teks makin tajam + kulit tidak bergeser, grain datar tidak diamplifikasi, dokumen whitening/ink, auto-detect + cap 4096, tombol UI + undo [tests/]
+- [x] 40. Validasi foto asli 1106x1600: slope tepi teks +116%, chroma noise bg -9%, yGrad bg -5%, tone kulit identik; runtime ~750ms
+- [x] 41. sw v18→v19 + ?v= bump [sw.js, index.html]
+- [x] 42. Runtime proof: node --check js/*.js + `npx playwright test` → **72/72 passed** (test `persist() denial` diperbaiki: `#toolsBtn` tidak ada → cek `#emptyState` + `#homeHistoryBtn`)
+
 ## Verification gate
 - npm test (playwright) harus hijau sebelum DONE

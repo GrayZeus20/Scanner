@@ -332,10 +332,16 @@ const MLDetector = {
   },
 
   /**
-   * ML/Pixel-by-pixel HD Document & Photo Enhancer / Super-Resolution Upscaler
-   * Performs multi-scale progressive upscaling, bilateral edge-directed stroke reconstruction,
-   * anti-ringing clamping, and mode-specific processing (Document vs Photo/Meme).
-   * Powered by TensorFlow.js neural convolution with high-speed TypedArray pixel fallback.
+   * HD Enhancer / Super-Resolution Upscaler (Document & Photo/Meme)
+   *
+   * Photo/meme pipeline (anti-rusak):
+   *   deblock sumber -> progressive 2x upscale -> luma-only gradient-gated
+   *   sharpening + anti-ringing clamp -> chroma smoothing.
+   * Document pipeline: progressive upscale -> unsharp conv -> paper whitening +
+   *   ink deepening.
+   *
+   * Prinsip: hanya struktur (tepi teks, outline) yang dipertajam. Area datar
+   * (kulit, background) dibiarkan utuh supaya wajah tidak jadi "kocak"/pecah.
    */
   async enhanceHD(canvas, options = {}) {
     if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
@@ -364,12 +370,31 @@ const MLDetector = {
     // Safety ceiling: mobile & browser canvas maximum dimension (4096px)
     let scale = requestedScale;
     if (maxDim * scale > 4096) {
+      // jangan pernah dibulatkan ke atas, kalau tidak hasilnya bisa > 4096
       scale = Math.max(1.2, 4096 / maxDim);
+      scale = Math.floor(scale * 100) / 100;
+    } else {
+      scale = Math.round(scale * 100) / 100;
     }
-    scale = Math.round(scale * 100) / 100;
 
-    const dstW = Math.max(2, Math.round(srcW * scale));
-    const dstH = Math.max(2, Math.round(srcH * scale));
+    let dstW = Math.max(2, Math.round(srcW * scale));
+    let dstH = Math.max(2, Math.round(srcH * scale));
+    const longest = Math.max(dstW, dstH);
+    if (longest > 4096) {
+      const f = 4096 / longest;
+      dstW = Math.max(2, Math.floor(dstW * f));
+      dstH = Math.max(2, Math.floor(dstH * f));
+      scale = Math.round((dstW / srcW) * 100) / 100;
+    }
+
+    // Stage 0 — source deblocking.
+    // Screenshot meme (WA/IG) bawa blok JPEG 8x8 + mosquito noise. Kalau dibesarkan
+    // dulu baru dipertajam, blok itu ikut membesar jadi smear ("pecah"). Jadi
+    // diratakan dulu di resolusi asli, hanya pada area datar (tepi asli dilewati).
+    let srcCanvas = canvas;
+    if (effectiveMode === 'photo' && srcW * srcH <= 3200000) {
+      srcCanvas = this._deblockSource(canvas) || canvas;
+    }
 
     // Create high-res destination canvas with high-quality progressive sampling
     const hdCanvas = document.createElement('canvas');
@@ -391,17 +416,17 @@ const MLDetector = {
       const midCtx = midCanvas.getContext('2d', { willReadFrequently: true });
       midCtx.imageSmoothingEnabled = true;
       midCtx.imageSmoothingQuality = 'high';
-      midCtx.drawImage(canvas, 0, 0, midW, midH);
+      midCtx.drawImage(srcCanvas, 0, 0, midW, midH);
 
-      // Intermediate unsharp convolution to prevent wide blur halos at 4x
-      // For photos: gentle edge steepening without halos; for documents: crisp ink steepening
+      // Stage 2 pre-pass: edge steepening at 2x so the final 4x tidak jadi blur lebar.
+      // Photo: ringan (tanpa halo di kulit); document: tegas untuk tinta.
       if (effectiveMode === 'photo') {
         this._fastUnsharpPass(midCtx, midW, midH, 1.35, -0.0875);
       } else {
         this._fastUnsharpPass(midCtx, midW, midH, 1.9, -0.22);
       }
 
-      // Stage 2: Final upscale from 2x (600px) to target (1200px)
+      // Stage 3: final upscale 2x -> target
       hdCtx.drawImage(midCanvas, 0, 0, dstW, dstH);
     } else if (scale > 2.0) {
       const midCanvas = document.createElement('canvas');
@@ -410,160 +435,434 @@ const MLDetector = {
       const midCtx = midCanvas.getContext('2d');
       midCtx.imageSmoothingEnabled = true;
       midCtx.imageSmoothingQuality = 'high';
-      midCtx.drawImage(canvas, 0, 0, midCanvas.width, midCanvas.height);
+      midCtx.drawImage(srcCanvas, 0, 0, midCanvas.width, midCanvas.height);
       hdCtx.drawImage(midCanvas, 0, 0, dstW, dstH);
     } else {
-      hdCtx.drawImage(canvas, 0, 0, dstW, dstH);
+      hdCtx.drawImage(srcCanvas, 0, 0, dstW, dstH);
     }
 
     let usedTf = false;
 
-    // 1. Try TensorFlow.js GPU-accelerated deep convolutional edge reconstruction
-    if (this.tfReady && typeof tf !== 'undefined') {
+    // 1. TensorFlow.js neural conv2d — DOCUMENT ONLY.
+    //    Photo/meme sengaja TIDAK lewat sini: kernel konvolusi seragam menajamkan
+    //    SEMUA piksel termasuk kulit datar, hasilnya halo + bintik ("pecah", "kocak").
+    //    Foto ditangani _photoTextSafePass (luma-only, gradient-gated) di bawah.
+    if (effectiveMode === 'document' && this.tfReady && typeof tf !== 'undefined') {
       try {
         const enhancedTensor = tf.tidy(() => {
           // Normalize to [0, 1] float tensor [H, W, 3]
           const input = tf.browser.fromPixels(hdCanvas).toFloat().div(255.0);
           const [r, g, b] = tf.split(input, 3, 2);
 
-          if (effectiveMode === 'photo') {
-            // Photo & meme mode: edge reconstruction preserving natural skin, eyes, and text without halos
-            // Center: +1.80, Cross: -0.16, Diag: -0.04 (Sum: 1.0)
-            const kernel = tf.tensor4d([
-              -0.04, -0.16, -0.04,
-              -0.16,  1.80, -0.16,
-              -0.04, -0.16, -0.04
-            ], [3, 3, 1, 1]);
+          // Document mode: 3x3 edge-directed unsharp kernel with diagonal anti-aliasing
+          // Center: +2.60, Cross: -0.32, Diag: -0.08 (Sum: 1.0)
+          const kernel = tf.tensor4d([
+            -0.08, -0.32, -0.08,
+            -0.32,  2.60, -0.32,
+            -0.08, -0.32, -0.08
+          ], [3, 3, 1, 1]);
 
-            const convR = tf.conv2d(r.expandDims(0), kernel, 1, 'same');
-            const convG = tf.conv2d(g.expandDims(0), kernel, 1, 'same');
-            const convB = tf.conv2d(b.expandDims(0), kernel, 1, 'same');
-            const merged = tf.concat([convR, convG, convB], 3).squeeze(0);
+          const convR = tf.conv2d(r.expandDims(0), kernel, 1, 'same');
+          const convG = tf.conv2d(g.expandDims(0), kernel, 1, 'same');
+          const convB = tf.conv2d(b.expandDims(0), kernel, 1, 'same');
+          const merged = tf.concat([convR, convG, convB], 3).squeeze(0);
 
-            // Clip directly - strictly NO paper whitening or ink deepening
-            return tf.clipByValue(merged, 0.0, 1.0);
-          } else {
-            // Document mode: 3x3 edge-directed unsharp kernel with diagonal anti-aliasing
-            // Center: +2.60, Cross: -0.32, Diag: -0.08 (Sum: 1.0)
-            const kernel = tf.tensor4d([
-              -0.08, -0.32, -0.08,
-              -0.32,  2.60, -0.32,
-              -0.08, -0.32, -0.08
-            ], [3, 3, 1, 1]);
+          // Document adaptive tone-mapping:
+          // Paper whitening: gently lift light background (> 0.72) towards pure white (1.0)
+          const paperBoost = tf.relu(merged.sub(0.72)).mul(0.42);
+          // Ink deepening: intensify dark text strokes (< 0.45) towards rich deep black
+          const inkDeepen = tf.relu(tf.sub(0.45, merged)).mul(0.22);
 
-            const convR = tf.conv2d(r.expandDims(0), kernel, 1, 'same');
-            const convG = tf.conv2d(g.expandDims(0), kernel, 1, 'same');
-            const convB = tf.conv2d(b.expandDims(0), kernel, 1, 'same');
-            const merged = tf.concat([convR, convG, convB], 3).squeeze(0);
-
-            // Document adaptive tone-mapping:
-            // Paper whitening: gently lift light background (> 0.72) towards pure white (1.0)
-            const paperBoost = tf.relu(merged.sub(0.72)).mul(0.42);
-            // Ink deepening: intensify dark text strokes (< 0.45) towards rich deep black
-            const inkDeepen = tf.relu(tf.sub(0.45, merged)).mul(0.22);
-
-            const adjusted = merged.add(paperBoost).sub(inkDeepen);
-            return tf.clipByValue(adjusted, 0.0, 1.0);
-          }
+          const adjusted = merged.add(paperBoost).sub(inkDeepen);
+          return tf.clipByValue(adjusted, 0.0, 1.0);
         });
 
-        await tf.browser.toPixels(enhancedTensor, hdCanvas);
-        enhancedTensor.dispose();
+        // dispose HARUS di finally: kalau toPixels gagal (GPU OOM/context loss),
+        // tensor tidak boleh bocor lalu menumpuk di percobaan berikutnya.
+        try {
+          await tf.browser.toPixels(enhancedTensor, hdCanvas);
+        } finally {
+          enhancedTensor.dispose();
+        }
         usedTf = true;
       } catch (e) {
         console.warn('TensorFlow.js HD enhancement fallback to TypedArray:', e);
       }
     }
 
-    // 2. High-speed typed-array pixel-by-pixel convolution + anti-ringing fallback
+    // 2. Deterministic TypedArray passes (selalu jalan kalau TF tidak dipakai)
     if (!usedTf) {
-      const imgData = hdCtx.getImageData(0, 0, dstW, dstH);
-      const data = imgData.data;
-      const copy = new Uint8ClampedArray(data);
-
-      const isPhoto = effectiveMode === 'photo';
-      const kCenter = isPhoto ? 1.80 : 2.60;
-      const kCross = isPhoto ? -0.16 : -0.32;
-      const kDiag = isPhoto ? -0.04 : -0.08;
-
-      for (let y = 1; y < dstH - 1; y++) {
-        const row = y * dstW * 4;
-        const rowU = (y - 1) * dstW * 4;
-        const rowD = (y + 1) * dstW * 4;
-
-        for (let x = 1; x < dstW - 1; x++) {
-          const idx = row + (x * 4);
-          const idxL = row + ((x - 1) * 4);
-          const idxR = row + ((x + 1) * 4);
-          const idxU = rowU + (x * 4);
-          const idxD = rowD + (x * 4);
-          const idxUL = rowU + ((x - 1) * 4);
-          const idxUR = rowU + ((x + 1) * 4);
-          const idxDL = rowD + ((x - 1) * 4);
-          const idxDR = rowD + ((x + 1) * 4);
-
-          for (let c = 0; c < 3; c++) {
-            const cCenter = copy[idx + c];
-            const cL = copy[idxL + c];
-            const cR = copy[idxR + c];
-            const cU = copy[idxU + c];
-            const cD = copy[idxD + c];
-            const cUL = copy[idxUL + c];
-            const cUR = copy[idxUR + c];
-            const cDL = copy[idxDL + c];
-            const cDR = copy[idxDR + c];
-
-            // Anti-ringing bounds: clamp result to neighborhood min/max with margin
-            const margin = isPhoto ? 8 : 12;
-            const nMin = Math.max(0, Math.min(cCenter, cL, cR, cU, cD, cUL, cUR, cDL, cDR) - margin);
-            const nMax = Math.min(255, Math.max(cCenter, cL, cR, cU, cD, cUL, cUR, cDL, cDR) + margin);
-
-            let val;
-            if (isPhoto) {
-              // Photo mode: gradient-guided edge preserving
-              const grad = Math.abs(cCenter - cL) + Math.abs(cCenter - cR) + Math.abs(cCenter - cU) + Math.abs(cCenter - cD);
-              if (grad > 20) {
-                // High contrast edge (text, eyes, outlines): apply crisp unsharp
-                val = cCenter * kCenter
-                    + (cL + cR + cU + cD) * kCross
-                    + (cUL + cUR + cDL + cDR) * kDiag;
-              } else {
-                // Flat / smooth skin / background: very subtle sharpening to prevent noise
-                val = cCenter * 1.25 + (cL + cR + cU + cD) * -0.05 + (cUL + cUR + cDL + cDR) * -0.0125;
-              }
-            } else {
-              val = cCenter * kCenter
-                  + (cL + cR + cU + cD) * kCross
-                  + (cUL + cUR + cDL + cDR) * kDiag;
-            }
-
-            if (val < nMin) val = nMin;
-            if (val > nMax) val = nMax;
-
-            // Document-specific adaptive tone-mapping (DO NOT apply on photos)
-            if (!isPhoto) {
-              if (val > 185) {
-                val = val + (255 - val) * 0.42; // clean paper background
-              } else if (val < 115) {
-                val = val * 0.82; // deepen and solidify ink strokes
-              }
-            }
-
-            data[idx + c] = val < 0 ? 0 : (val > 255 ? 255 : (val | 0));
-          }
-        }
+      if (effectiveMode === 'photo') {
+        this._photoTextSafePass(hdCtx, dstW, dstH);
+        // Radius chroma ikut skala upscale: blotch subsampling JPEG tumbuh
+        // sebesar skala, jadi 5x5 di 2x kurang; 9x9 pas dan tidak bikin warna
+        // kulit "luntur" karena chroma tetap datar di kulit.
+        const cr = Math.min(8, Math.max(2, Math.round(2.5 * scale)));
+        this._chromaSmooth(hdCtx, dstW, dstH, cr);
+      } else {
+        this._documentInkPass(hdCtx, dstW, dstH);
       }
-      hdCtx.putImageData(imgData, 0, 0);
     }
 
     return {
       canvas: hdCanvas,
-      engine: usedTf ? 'TensorFlow.js Neural Conv2D' : 'Pixel-by-Pixel Anti-Ringing Fallback',
+      engine: usedTf
+        ? 'TensorFlow.js Neural Conv2D'
+        : (effectiveMode === 'photo' ? 'Text-Safe Luma Pipeline' : 'Pixel-by-Pixel Anti-Ringing Fallback'),
       scale,
       width: dstW,
       height: dstH,
       mode: effectiveMode
     };
+  },
+
+  /**
+   * Stage 0 photo prep — flatten JPEG/WA block artifacts at SOURCE resolution.
+   * Blocks are harmless while small; after 2-4x upscale they become visible smears.
+   * Only flat pixels (|detail| < 13) are pulled toward the local mean, real edges
+   * (text strokes, outlines, mustache) are left untouched.
+   */
+  _deblockSource(canvas) {
+    try {
+      const w = canvas.width;
+      const h = canvas.height;
+      const out = document.createElement('canvas');
+      out.width = w;
+      out.height = h;
+      const ctx = out.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(canvas, 0, 0);
+      const img = ctx.getImageData(0, 0, w, h);
+      const d = img.data;
+      const n = w * h;
+
+      const Y = new Float32Array(n);
+      const Y2 = new Float32Array(n);
+      for (let i = 0, p = 0; i < n; i++, p += 4) {
+        const y = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+        Y[i] = y;
+        Y2[i] = y * y;
+      }
+      const lowY = this._boxMean(Y, w, h, 1);
+      const lowY2 = this._boxMean(Y2, w, h, 1);
+
+      for (let i = 0, p = 0; i < n; i++, p += 4) {
+        const dev = Y[i] - lowY[i];
+        // Tepi asli (teks / garis / kumis) punya dev besar DAN variansi besar -> jangan disentuh.
+        // Yang dibersihkan hanya area benar-benar datar (blok JPEG / grain kompresi).
+        if (dev > 7 || dev < -7) continue;
+        const variance = lowY2[i] - lowY[i] * lowY[i];
+        if (variance > 36) continue; // std > 6 -> ada struktur, skip
+        const delta = -dev * 0.7;
+        d[p] += delta;
+        d[p + 1] += delta;
+        d[p + 2] += delta;
+      }
+      ctx.putImageData(img, 0, 0);
+      return out;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  /**
+   * Separable box mean (edge-clamped). O(n) per axis, aman untuk canvas 4096².
+   * Dipakai sebagai low-pass reference untuk gradient-gated sharpening.
+   */
+  _boxMean(src, w, h, r) {
+    const div = 2 * r + 1;
+    const tmp = new Float32Array(w * h);
+    const out = new Float32Array(w * h);
+
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      let sum = 0;
+      for (let k = -r; k <= r; k++) sum += src[row + (k < 0 ? 0 : (k >= w ? w - 1 : k))];
+      for (let x = 0; x < w; x++) {
+        tmp[row + x] = sum / div;
+        const addX = x + r + 1 >= w ? w - 1 : x + r + 1;
+        const subX = x - r < 0 ? 0 : x - r;
+        sum += src[row + addX] - src[row + subX];
+      }
+    }
+
+    for (let x = 0; x < w; x++) {
+      let sum = 0;
+      for (let k = -r; k <= r; k++) sum += tmp[(k < 0 ? 0 : (k >= h ? h - 1 : k)) * w + x];
+      for (let y = 0; y < h; y++) {
+        out[y * w + x] = sum / div;
+        const addY = y + r + 1 >= h ? h - 1 : y + r + 1;
+        const subY = y - r < 0 ? 0 : y - r;
+        sum += tmp[addY * w + x] - tmp[subY * w + x];
+      }
+    }
+    return out;
+  },
+
+  /**
+   * Photo / meme / screenshot HD pass — "logika HD" yang anti-rusak:
+   *  1. Kerja di kanal LUMA saja, lalu dipakai sebagai delta ke RGB
+   *     -> warna kulit & kumis hitam tidak bergeser / tidak jadi fringe.
+   *  2. Low-pass 3x3 / 5x5 / 9x9 dihitung streaming per baris (ring buffer),
+   *     jadi kanvas 4096² tidak butuh ratusan MB typed array.
+   *  3. detail = luma - low-pass, di-gate smoothstep: area datar (kulit,
+   *     background) = 0 -> tidak ada noise/grain yang ikut ditajamkan.
+   *  4. Tiga skala detail: 3x3 ketajaman tepi, 5x5 stroke lebih tebal,
+   *     9x9 "clarity" supaya wajah/fitur tidak terlihat lembek.
+   *  5. Clamp ke min/max 3x3 (+margin) -> anti-ringing, tidak "pecah"/halo.
+   *
+   * Gate-nya gabungan dua skala (5x5 DAN 9x9 harus sama-sama "ada isi"):
+   * noise JPEG itu frekuensi tinggi -> det3 besar tapi det9 kecil, jadi
+   * background/grain tidak ikut ditajamkan, sedangkan tepi asli (teks, mata,
+   * garis kumis) pasti punya isi di dua skala.
+   *
+   * @param {object} opts override konstanta (dipakai tuning/test)
+   */
+  _photoTextSafePass(ctx, w, h, opts = {}) {
+    const P = Object.assign({
+      gateFloor: 2, gateSpan: 5,        // 5x5: ambang & lebar ramp
+      structFloor: 5, structSpan: 8,   // 9x9: syarat ada struktur lebar
+      k3: 3.2, k5: 1.6, k9: 0.6,       // bobot unsharp 3 skala
+      flatLimit3: 3, flatLimit9: 7,    // syarat area datar
+      flatPull: 0.75,                  // tarik ke rata (denoise halus)
+      marginBase: 4, marginGain: 20    // anti-ringing
+    }, opts);
+
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+
+    const getRowLuma = (sy, out) => {
+      const base = sy * w * 4;
+      for (let x = 0; x < w; x++) {
+        const p = base + x * 4;
+        out[x] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+      }
+    };
+
+    const b3 = this._boxStreamer(w, h, 1, getRowLuma);
+    const b5 = this._boxStreamer(w, h, 2, getRowLuma);
+    const b9 = this._boxStreamer(w, h, 4, getRowLuma);
+
+    for (let y = 0; y < h; y++) {
+      const m3 = b3.at(y);
+      const m5 = b5.at(y);
+      const m9 = b9.at(y);
+      const rowC = b3.luma(y);
+      const rowU = b3.luma(y > 0 ? y - 1 : 0);
+      const rowD = b3.luma(y < h - 1 ? y + 1 : h - 1);
+
+      for (let x = 0; x < w; x++) {
+        const c = rowC[x];
+        const det3 = c - m3[x];
+        const det5 = c - m5[x];
+        const det9 = c - m9[x];
+        const ad3 = det3 < 0 ? -det3 : det3;
+        const ad5 = det5 < 0 ? -det5 : det5;
+        const ad9 = det9 < 0 ? -det9 : det9;
+        let lum = c;
+
+        // geser ke struktur: butuh isi di 5x5 (kontras) DAN 9x9 (bukan noise)
+        let wA = (ad5 - P.gateFloor) / P.gateSpan;
+        if (wA < 0) wA = 0; else if (wA > 1) wA = 1;
+        let wB = (ad9 - P.structFloor) / P.structSpan;
+        if (wB < 0) wB = 0; else if (wB > 1) wB = 1;
+        let wt = wA < wB ? wA : wB;         // min -> noise (det9 kecil) mati
+        wt = wt * wt * (3 - 2 * wt);        // smoothstep gate
+
+        if (wt > 0) {
+          const l = rowC[x > 0 ? x - 1 : 0];
+          const r = rowC[x < w - 1 ? x + 1 : w - 1];
+          const u = rowU[x];
+          const dn = rowD[x];
+          const lo = Math.min(c, l, r, u, dn);
+          const hi = Math.max(c, l, r, u, dn);
+
+          // unsharp 3 skala: tepi tajam + stroke tebal + clarity fitur wajah
+          lum = c + det3 * P.k3 * wt + det5 * P.k5 * wt + det9 * P.k9 * wt;
+
+          const m = P.marginBase + P.marginGain * wt;    // anti-ringing margin
+          if (lum < lo - m) lum = lo - m;
+          else if (lum > hi + m) lum = hi + m;
+        } else if (ad3 < P.flatLimit3 && ad9 < P.flatLimit9) {
+          // Area benar-benar datar: jangan ditajamkan, malah diratakan sedikit.
+          // det9 = c - rata lokal, jadi menarik ke rata = c - det9*k (BUKAN +).
+          lum = c - det9 * P.flatPull;
+        }
+
+        if (lum !== c) {
+          // delta luma diterapkan rata ke RGB -> hue/saturasi tetap (kulit & kumis aman)
+          const delta = lum - c;
+          const p = (y * w + x) * 4;
+          d[p] += delta;
+          d[p + 1] += delta;
+          d[p + 2] += delta;
+        }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  },
+
+  /**
+   * Chroma denoise: box-mean Cb/Cr (default 5x5), luma dipertahankan.
+   * JPEG 4:2:0 bikin blotch warna (mis. background merah) yang ikut membesar
+   * saat upscale. Blur chroma menghilangkannya tanpa mengorbankan ketajaman.
+   */
+  _chromaSmooth(ctx, w, h, r = 2) {
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+
+    const rowCb = (sy, out) => {
+      const base = sy * w * 4;
+      for (let x = 0; x < w; x++) {
+        const p = base + x * 4;
+        out[x] = 128 - 0.168736 * d[p] - 0.331264 * d[p + 1] + 0.5 * d[p + 2];
+      }
+    };
+    const rowCr = (sy, out) => {
+      const base = sy * w * 4;
+      for (let x = 0; x < w; x++) {
+        const p = base + x * 4;
+        out[x] = 128 + 0.5 * d[p] - 0.418688 * d[p + 1] - 0.081312 * d[p + 2];
+      }
+    };
+
+    const sCb = this._boxStreamer(w, h, r, rowCb);
+    const sCr = this._boxStreamer(w, h, r, rowCr);
+
+    for (let y = 0; y < h; y++) {
+      const cbRow = sCb.at(y);
+      const crRow = sCr.at(y);
+      const base = y * w * 4;
+      for (let x = 0; x < w; x++) {
+        const p = base + x * 4;
+        const Y = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+        const cb = cbRow[x] - 128;
+        const cr = crRow[x] - 128;
+        d[p] = Y + 1.402 * cr;
+        d[p + 1] = Y - 0.344136 * cb - 0.714136 * cr;
+        d[p + 2] = Y + 1.772 * cb;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  },
+
+  /**
+   * Streaming separable box-mean (radius r) dengan ring buffer.
+   * `at(y)` mengembalikan baris means (Float32Array panjang w) untuk baris y;
+   * `luma(y)` mengembalikan baris luma asli (untuk min/max 3x3).
+   * Memori O(w * (2r+1)), bukan O(w*h).
+   */
+  _boxStreamer(w, h, r, getRowLuma) {
+    const win = 2 * r + 1;
+    const inv = 1 / win;
+    const hor = Array.from({ length: win }, () => new Float32Array(w));
+    const lum = Array.from({ length: win }, () => new Float32Array(w));
+    const out = new Float32Array(w);
+    let loaded = 0;
+
+    const build = (sy) => {
+      const src = sy < 0 ? 0 : (sy > h - 1 ? h - 1 : sy);
+      const yRow = lum[sy % win];
+      if (sy >= loaded) getRowLuma(src, yRow);
+      const hrow = hor[sy % win];
+      let sum = 0;
+      for (let k = -r; k <= r; k++) sum += yRow[k < 0 ? 0 : (k > w - 1 ? w - 1 : k)];
+      for (let x = 0; x < w; x++) {
+        hrow[x] = sum * inv;
+        const a = x + r + 1 < w ? x + r + 1 : w - 1;
+        const b = x - r < 0 ? 0 : x - r;
+        sum += yRow[a] - yRow[b];
+      }
+    };
+
+    return {
+      at(y) {
+        while (loaded <= y + r && loaded < h) {
+          build(loaded);
+          loaded++;
+        }
+        out.fill(0);
+        for (let k = -r; k <= r; k++) {
+          const yy = y + k;
+          const src = yy < 0 ? 0 : (yy > h - 1 ? h - 1 : yy);
+          const row = hor[src % win];
+          for (let x = 0; x < w; x++) out[x] += row[x];
+        }
+        for (let x = 0; x < w; x++) out[x] *= inv;
+        return out;
+      },
+      luma(y) {
+        const src = y < 0 ? 0 : (y > h - 1 ? h - 1 : y);
+        while (loaded <= src && loaded < h) {
+          build(loaded);
+          loaded++;
+        }
+        return lum[src % win];
+      }
+    };
+  },
+
+  /**
+   * Document pass — unsharp 3x3 + paper whitening + ink deepening (unchanged logic).
+   */
+  _documentInkPass(ctx, w, h) {
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    const copy = new Uint8ClampedArray(data);
+
+    const kCenter = 2.60;
+    const kCross = -0.32;
+    const kDiag = -0.08;
+
+    for (let y = 1; y < h - 1; y++) {
+      const row = y * w * 4;
+      const rowU = (y - 1) * w * 4;
+      const rowD = (y + 1) * w * 4;
+
+      for (let x = 1; x < w - 1; x++) {
+        const idx = row + (x * 4);
+        const idxL = row + ((x - 1) * 4);
+        const idxR = row + ((x + 1) * 4);
+        const idxU = rowU + (x * 4);
+        const idxD = rowD + (x * 4);
+        const idxUL = rowU + ((x - 1) * 4);
+        const idxUR = rowU + ((x + 1) * 4);
+        const idxDL = rowD + ((x - 1) * 4);
+        const idxDR = rowD + ((x + 1) * 4);
+
+        for (let c = 0; c < 3; c++) {
+          const cCenter = copy[idx + c];
+          const cL = copy[idxL + c];
+          const cR = copy[idxR + c];
+          const cU = copy[idxU + c];
+          const cD = copy[idxD + c];
+          const cUL = copy[idxUL + c];
+          const cUR = copy[idxUR + c];
+          const cDL = copy[idxDL + c];
+          const cDR = copy[idxDR + c];
+
+          // Anti-ringing bounds: clamp result to neighborhood min/max with margin
+          const margin = 12;
+          const nMin = Math.max(0, Math.min(cCenter, cL, cR, cU, cD, cUL, cUR, cDL, cDR) - margin);
+          const nMax = Math.min(255, Math.max(cCenter, cL, cR, cU, cD, cUL, cUR, cDL, cDR) + margin);
+
+          let val = cCenter * kCenter
+              + (cL + cR + cU + cD) * kCross
+              + (cUL + cUR + cDL + cDR) * kDiag;
+
+          if (val < nMin) val = nMin;
+          if (val > nMax) val = nMax;
+
+          if (val > 185) {
+            val = val + (255 - val) * 0.42; // clean paper background
+          } else if (val < 115) {
+            val = val * 0.82; // deepen and solidify ink strokes
+          }
+
+          data[idx + c] = val < 0 ? 0 : (val > 255 ? 255 : (val | 0));
+        }
+      }
+    }
+    ctx.putImageData(imgData, 0, 0);
   },
 
   /**

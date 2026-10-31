@@ -37,6 +37,9 @@ const app = {
     isCropping: false,
     upscaleScale: 2.0,
     upscaleMode: 'auto',
+    /* Persisten storage: null = belum dicek, true = granted, false = best-effort */
+    storagePersisted: null,
+    storagePersistSupported: null,
     /* undo/redo kini per-halaman (page._undoStack / page._redoStack) */
     maxUndoSteps: 30
   },
@@ -69,7 +72,8 @@ const app = {
       dirty: this.state.dirty,
       pages: this.state.pages.length,
       currentPageIndex: this.state.currentPageIndex,
-      sessionsCount: this.state.sessionsCache.length
+      sessionsCount: this.state.sessionsCache.length,
+      storagePersisted: this.state.storagePersisted
     };
     console.log('[dumpState]', dump, this.state.sessionsCache);
     return dump;
@@ -286,6 +290,47 @@ const app = {
     });
     if (!navigator.onLine) {
       document.getElementById('offlineBadge')?.classList.remove('hidden');
+    }
+
+    // Persisten storage: minta browser untuk TIDAK menghapus IndexedDB + cache SW
+    // saat storage pressure. Best-effort — Chrome bisa menolak tanpa user gesture,
+    // jadi hasilnya dicatat di state (bukan dianggap sukses).
+    this.requestPersistentStorage();
+  },
+
+  /**
+   * Minta `navigator.storage.persist()`. Idempoten: kalau sudah granted,
+   * tidak memanggil ulang. Tidak pernah throw ke caller.
+   * State: storagePersisted (null|true|false), storagePersistSupported (null|true|false)
+   */
+  async requestPersistentStorage() {
+    const supported = !!(navigator.storage && typeof navigator.storage.persist === 'function');
+    this.state.storagePersistSupported = supported;
+    if (!supported) {
+      this.state.storagePersisted = false;
+      return false;
+    }
+    try {
+      const already = typeof navigator.storage.persisted === 'function'
+        ? await navigator.storage.persisted()
+        : false;
+      if (already) {
+        this.state.storagePersisted = true;
+        return true;
+      }
+      const granted = await navigator.storage.persist();
+      this.state.storagePersisted = !!granted;
+      if (!granted) {
+        // Bukan error: browser memutuskan best-effort. Data tetap ditulis,
+        // hanya bisa dibersihkan otomatis di bawah storage pressure.
+        console.info('[storage] persistent storage not granted — running best-effort');
+      }
+      return !!granted;
+    } catch (err) {
+      // Private mode / kebijakan browser: jangan sampai blok init app.
+      console.warn('[storage] persist() failed:', err);
+      this.state.storagePersisted = false;
+      return false;
     }
   },
 
@@ -2419,11 +2464,17 @@ const app = {
       this.state.canvasWidth = result.canvas.width;
       this.state.canvasHeight = result.canvas.height;
 
-      // Update page original image and thumbnails
+      // Simpan hasil HD tanpa re-compress yang bikin teks "pecah" lagi:
+      // PNG untuk kanvas kecil/sedang, JPEG kualitas tinggi hanya untuk kanvas besar.
+      // (toDataURL jpeg 0.95 sebelumnya justru menambah ringing di tepi huruf)
+      const lossless = (result.width * result.height) <= 2500000;
       const newImg = new Image();
-      newImg.src = result.canvas.toDataURL('image/jpeg', 0.95);
+      newImg.src = lossless
+        ? result.canvas.toDataURL('image/png')
+        : result.canvas.toDataURL('image/jpeg', 0.97);
       await new Promise(res => { newImg.onload = res; });
       this.setCurrentPageImage(newImg);
+      this.state.dirty = true;
 
       const modeLabel = result.mode === 'photo' ? (t('modePhoto') || 'Foto') : (t('modeDoc') || 'Dokumen');
       const msg = `${t('hdDone')} [${modeLabel}] (${oldW}×${oldH} → ${result.width}×${result.height} px, ${result.scale}x)`;

@@ -157,4 +157,56 @@ test.describe('Responsive Layout & PWA Suite', () => {
     // No duplicate install button in empty state
     await expect(page.locator('#emptyInstallBtn')).toHaveCount(0);
   });
+
+  test('persistent storage state is tracked and exposed in dumpState', async ({ page }) => {
+    await page.goto('/');
+
+    // initPwaInstall runs during init; wait until the async request settles
+    const result = await page.waitForFunction(() => {
+      const supported = window.app?.state?.storagePersistSupported;
+      const persisted = window.app?.state?.storagePersisted;
+      return (supported !== null && persisted !== null) ? { supported, persisted } : false;
+    }, null, { timeout: 5000 }).then((h) => h.jsonValue());
+
+    expect(typeof result.supported).toBe('boolean');
+    expect(typeof result.persisted).toBe('boolean');
+
+    // dumpState must surface it (inspectable state dump)
+    const dump = await page.evaluate(() => window.app.dumpState());
+    expect(dump).toHaveProperty('storagePersisted');
+    expect(dump.storagePersisted).toBe(result.persisted);
+
+    // Idempotent: calling again must not throw and must keep a boolean
+    const again = await page.evaluate(() => window.app.requestPersistentStorage());
+    expect(typeof again).toBe('boolean');
+  });
+
+  test('persist() denial leaves app functional (error path)', async ({ page }) => {
+    await page.goto('/');
+    // Force the failure branch: persist() rejects (private mode / policy)
+    const state = await page.evaluate(async () => {
+      const original = navigator.storage.persist;
+      const originalPersisted = navigator.storage.persisted;
+      navigator.storage.persisted = async () => false;
+      navigator.storage.persist = async () => { throw new Error('denied by policy'); };
+      try {
+        const granted = await window.app.requestPersistentStorage();
+        return { granted, persisted: window.app.state.storagePersisted, appAlive: typeof window.app === 'object' };
+      } finally {
+        navigator.storage.persist = original;
+        navigator.storage.persisted = originalPersisted;
+      }
+    });
+
+    expect(state.granted).toBe(false);
+    expect(state.persisted).toBe(false);
+    expect(state.appAlive).toBe(true);
+
+    // App still renders and accepts navigation after the failure.
+    // (Di home/empty state bottom nav memang disembunyikan, jadi navigasi
+    //  yang diuji = tombol Riwayat di layar utama.)
+    await expect(page.locator('#emptyState')).toBeVisible();
+    await page.locator('#homeHistoryBtn').click();
+    await expect(page.locator('#historyView')).not.toHaveClass(/hidden/);
+  });
 });
