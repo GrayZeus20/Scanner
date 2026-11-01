@@ -6,7 +6,12 @@ const manualCrop = {
   canvas: null,
   handleSize: 50,   // harus sinkron dengan .crop-handle di style.css
   handleOffset: 25, // handleSize / 2 — center handle tepat di corner
-  magSize: 110,     // harus sinkron dengan .crop-magnifier di style.css
+  magSize: 120,     // harus sinkron dengan .crop-magnifier di style.css
+  magZoom: 2.5,     // pembesaran presisi 2.5x visual
+  magCanvas: null,
+  magCtx: null,
+  magCornerBadge: null,
+  magBadgeText: null,
 
   // SVG elements for non-clipped rendering
   _svg: null,
@@ -54,6 +59,10 @@ const manualCrop = {
     this.overlay = document.getElementById('cropOverlay');
     this.area = document.getElementById('cropArea');
     this.magnifier = document.getElementById('cropMagnifier');
+    this.magCanvas = document.getElementById('cropMagnifierCanvas');
+    this.magCtx = this.magCanvas ? this.magCanvas.getContext('2d') : null;
+    this.magCornerBadge = document.getElementById('cropMagnifierCorner');
+    this.magBadgeText = document.querySelector('#cropMagnifierBadge .crop-badge-text');
     this.wrapper = document.getElementById('canvasWrapper');
     this.canvas = document.getElementById('mainCanvas');
 
@@ -254,26 +263,181 @@ const manualCrop = {
   },
 
   updateMagnifier(pos) {
-    if (!this.magnifier) return;
+    if (!this.magnifier || !this.canvas || !this.wrapper) return;
+    const key = this.state.activeCorner;
+    if (!key || !this.state.corners[key]) return;
+
+    const corner = this.state.corners[key];
     const cr = this._cache.canvasRect || this.canvas.getBoundingClientRect();
     const wr = this._cache.wrapperRect || this.wrapper.getBoundingClientRect();
     const scaleX = this.canvas.width / cr.width;
     const scaleY = this.canvas.height / cr.height;
+    const canvasLeft = cr.left - wr.left;
+    const canvasTop = cr.top - wr.top;
+
+    // 1. Positioning the magnifier loupe:
+    // Centered horizontally on corner; placed above the finger/corner (or below if near top)
+    const magSize = this.magSize;
+    const pad = 8;
+    let magLeft = corner.x - magSize / 2;
+    let magTop;
+    if (corner.y < magSize + 40) {
+      magTop = corner.y + 40; // below corner
+    } else {
+      magTop = corner.y - magSize - 30; // above corner
+    }
 
     // Clamp magnifier fully inside wrapper — never overflow / get clipped
-    const pad = 8;
-    let magLeft = (pos.x - wr.left) + 20;
-    let magTop = (pos.y - wr.top) - 140;
-    magLeft = Math.max(pad, Math.min(magLeft, wr.width - this.magSize - pad));
-    magTop = Math.max(pad, Math.min(magTop, wr.height - this.magSize - pad));
+    magLeft = Math.max(pad, Math.min(magLeft, wr.width - magSize - pad));
+    magTop = Math.max(pad, Math.min(magTop, wr.height - magSize - pad));
 
     this.magnifier.style.left = magLeft + 'px';
     this.magnifier.style.top = magTop + 'px';
 
-    const magSize = this.magSize;
-    const bgX = (pos.x - cr.left) * scaleX - magSize / 2;
-    const bgY = (pos.y - cr.top) * scaleY - magSize / 2;
-    this.magnifier.style.backgroundPosition = `${-bgX}px ${-bgY}px`;
+    // 2. High-precision 2.5x Canvas Magnification:
+    if (!this.magCanvas) {
+      this.magCanvas = document.getElementById('cropMagnifierCanvas');
+      this.magCtx = this.magCanvas ? this.magCanvas.getContext('2d') : null;
+    }
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dW = magSize * dpr;
+    const dH = magSize * dpr;
+    const cx = dW / 2;
+    const cy = dH / 2;
+
+    if (this.magCanvas && (this.magCanvas.width !== dW || this.magCanvas.height !== dH)) {
+      this.magCanvas.width = dW;
+      this.magCanvas.height = dH;
+    }
+
+    // Exact pixel coordinate on source canvas where cut vertex is located:
+    const cornerCanvasX = (corner.x - canvasLeft) * scaleX;
+    const cornerCanvasY = (corner.y - canvasTop) * scaleY;
+
+    // Fixed 2.5x zoom relative to what is displayed on screen
+    const zoom = this.magZoom || 2.5;
+    const sW = (magSize / zoom) * scaleX;
+    const sH = (magSize / zoom) * scaleY;
+    const sx = cornerCanvasX - sW / 2;
+    const sy = cornerCanvasY - sH / 2;
+
+    if (this.magCtx) {
+      const srcW = this.canvas.width;
+      const srcH = this.canvas.height;
+
+      // Dark background for areas outside image bounds
+      this.magCtx.fillStyle = '#0f172a';
+      this.magCtx.fillRect(0, 0, dW, dH);
+
+      // Subtle checkered pattern outside image bounds
+      if (sx < 0 || sy < 0 || sx + sW > srcW || sy + sH > srcH) {
+        this.magCtx.fillStyle = '#1e293b';
+        const step = 8 * dpr;
+        for (let gx = 0; gx < dW; gx += step * 2) {
+          for (let gy = 0; gy < dH; gy += step * 2) {
+            this.magCtx.fillRect(gx, gy, step, step);
+            this.magCtx.fillRect(gx + step, gy + step, step, step);
+          }
+        }
+      }
+
+      // Compute valid source sub-rectangle (prevent IndexSizeError when corner is near image border)
+      const clampSx = Math.max(0, Math.min(srcW, sx));
+      const clampSy = Math.max(0, Math.min(srcH, sy));
+      const clampSx2 = Math.max(0, Math.min(srcW, sx + sW));
+      const clampSy2 = Math.max(0, Math.min(srcH, sy + sH));
+
+      const validSW = clampSx2 - clampSx;
+      const validSH = clampSy2 - clampSy;
+
+      if (validSW > 0 && validSH > 0) {
+        const dx = ((clampSx - sx) / sW) * dW;
+        const dy = ((clampSy - sy) / sH) * dH;
+        const targetDW = (validSW / sW) * dW;
+        const targetDH = (validSH / sH) * dH;
+
+        this.magCtx.drawImage(this.canvas, clampSx, clampSy, validSW, validSH, dx, dy, targetDW, targetDH);
+
+        // Document edge boundaries if visible in loupe
+        this.magCtx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        this.magCtx.lineWidth = 1 * dpr;
+        if (clampSx === 0 && sx < 0) {
+          this.magCtx.beginPath(); this.magCtx.moveTo(dx, 0); this.magCtx.lineTo(dx, dH); this.magCtx.stroke();
+        }
+        if (clampSy === 0 && sy < 0) {
+          this.magCtx.beginPath(); this.magCtx.moveTo(0, dy); this.magCtx.lineTo(dW, dy); this.magCtx.stroke();
+        }
+        if (clampSx2 === srcW && sx + sW > srcW) {
+          this.magCtx.beginPath(); this.magCtx.moveTo(dx + targetDW, 0); this.magCtx.lineTo(dx + targetDW, dH); this.magCtx.stroke();
+        }
+        if (clampSy2 === srcH && sy + sH > srcH) {
+          this.magCtx.beginPath(); this.magCtx.moveTo(0, dy + targetDH); this.magCtx.lineTo(dW, dy + targetDH); this.magCtx.stroke();
+        }
+      }
+
+      // Draw the two crop cut lines meeting exactly at the center cut point
+      const adjKeys = {
+        tl: ['tr', 'bl'],
+        tr: ['tl', 'br'],
+        br: ['tr', 'bl'],
+        bl: ['tl', 'br']
+      }[key];
+
+      if (adjKeys) {
+        const c = this.state.corners;
+        const c1 = c[adjKeys[0]];
+        const c2 = c[adjKeys[1]];
+        if (c1 && c2) {
+          const v1x = c1.x - corner.x;
+          const v1y = c1.y - corner.y;
+          const v2x = c2.x - corner.x;
+          const v2y = c2.y - corner.y;
+
+          const len1 = Math.hypot(v1x, v1y) || 1;
+          const len2 = Math.hypot(v2x, v2y) || 1;
+
+          const r = dW / 2;
+          this.magCtx.save();
+          // High-contrast outer stroke
+          this.magCtx.lineWidth = 3.5 * dpr;
+          this.magCtx.strokeStyle = 'rgba(15, 23, 42, 0.85)';
+          this.magCtx.lineCap = 'round';
+          this.magCtx.beginPath();
+          this.magCtx.moveTo(cx, cy);
+          this.magCtx.lineTo(cx + (v1x / len1) * r, cy + (v1y / len1) * r);
+          this.magCtx.moveTo(cx, cy);
+          this.magCtx.lineTo(cx + (v2x / len2) * r, cy + (v2y / len2) * r);
+          this.magCtx.stroke();
+
+          // High-visibility blue inner stroke
+          this.magCtx.lineWidth = 2 * dpr;
+          this.magCtx.strokeStyle = '#2563EB';
+          this.magCtx.beginPath();
+          this.magCtx.moveTo(cx, cy);
+          this.magCtx.lineTo(cx + (v1x / len1) * r, cy + (v1y / len1) * r);
+          this.magCtx.moveTo(cx, cy);
+          this.magCtx.lineTo(cx + (v2x / len2) * r, cy + (v2y / len2) * r);
+          this.magCtx.stroke();
+          this.magCtx.restore();
+        }
+      }
+    }
+
+    // 3. Update corner badge label
+    const cornerLabels = {
+      tl: (typeof t === 'function' ? t('cornerTL') : '') || 'Kiri Atas',
+      tr: (typeof t === 'function' ? t('cornerTR') : '') || 'Kanan Atas',
+      bl: (typeof t === 'function' ? t('cornerBL') : '') || 'Kiri Bawah',
+      br: (typeof t === 'function' ? t('cornerBR') : '') || 'Kanan Bawah'
+    };
+    const cornerBadge = document.getElementById('cropMagnifierCorner');
+    if (cornerBadge) cornerBadge.textContent = key.toUpperCase();
+    const textBadge = document.querySelector('#cropMagnifierBadge .crop-badge-text');
+    if (textBadge) {
+      const lbl = cornerLabels[key] || 'Titik Potong';
+      textBadge.textContent = `${lbl} • ${zoom}x`;
+    }
   },
 
   onEnd() {
@@ -286,8 +450,16 @@ const manualCrop = {
   showMagnifier() {
     if (!this.magnifier) return;
     this.magnifier.style.display = 'block';
-    this.magnifier.style.backgroundImage = `url(${this.canvas.toDataURL()})`;
-    this.magnifier.style.backgroundSize = `${this.canvas.width}px ${this.canvas.height}px`;
+    if (!this.magCanvas) {
+      this.magCanvas = document.getElementById('cropMagnifierCanvas');
+      this.magCtx = this.magCanvas ? this.magCanvas.getContext('2d') : null;
+    }
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const size = this.magSize;
+    if (this.magCanvas && (this.magCanvas.width !== size * dpr || this.magCanvas.height !== size * dpr)) {
+      this.magCanvas.width = size * dpr;
+      this.magCanvas.height = size * dpr;
+    }
   },
 
   hideMagnifier() {

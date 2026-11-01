@@ -137,7 +137,19 @@
                 <div class="crop-handle" data-handle="tr" aria-label="Resize Top Right"></div>
                 <div class="crop-handle" data-handle="bl" aria-label="Resize Bottom Left"></div>
                 <div class="crop-handle" data-handle="br" aria-label="Resize Bottom Right"></div>
-                <div class="crop-magnifier" id="cropMagnifier" aria-hidden="true"></div>
+                <div class="crop-magnifier" id="cropMagnifier" aria-hidden="true">
+                  <canvas id="cropMagnifierCanvas" class="crop-magnifier-canvas"></canvas>
+                  <div class="crop-magnifier-reticle">
+                    <div class="crop-reticle-line crop-reticle-h"></div>
+                    <div class="crop-reticle-line crop-reticle-v"></div>
+                    <div class="crop-reticle-ring"></div>
+                    <div class="crop-reticle-dot"></div>
+                  </div>
+                  <div class="crop-magnifier-badge" id="cropMagnifierBadge">
+                    <span class="crop-badge-corner" id="cropMagnifierCorner">TL</span>
+                    <span class="crop-badge-text">Titik Potong</span>
+                  </div>
+                </div>
               </div>
             </div>
             <!-- Crop Action Bar -->

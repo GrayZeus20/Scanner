@@ -322,4 +322,56 @@ test.describe('Document Crop & Auto Crop Suite', () => {
 
     await page.mouse.up();
   });
+
+  test('magnifier loupe renders precision crosshair, target dot, and corner badge during crop drag', async ({ page }) => {
+    await loadTestDocument(page);
+
+    await page.locator('#navTools').click();
+    await page.locator('#toolManualCropBtn').click();
+    await expect(page.locator('#cropOverlay')).not.toHaveClass(/hidden/);
+
+    const tlHandle = page.locator('.crop-handle[data-handle="tl"]');
+    const box = await tlHandle.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 30, box.y + 30, { steps: 5 });
+
+    // Verify magnifier elements are visible and populated
+    const magState = await page.evaluate(() => {
+      const mag = document.getElementById('cropMagnifier');
+      const canvas = document.getElementById('cropMagnifierCanvas');
+      const dot = document.querySelector('.crop-reticle-dot');
+      const hLine = document.querySelector('.crop-reticle-h');
+      const vLine = document.querySelector('.crop-reticle-v');
+      const corner = document.getElementById('cropMagnifierCorner');
+      const badge = document.getElementById('cropMagnifierBadge');
+
+      return {
+        display: mag.style.display,
+        hasCanvas: !!canvas && canvas.width > 0 && canvas.height > 0,
+        hasDot: !!dot,
+        hasHLine: !!hLine,
+        hasVLine: !!vLine,
+        cornerText: corner ? corner.textContent : '',
+        badgeText: badge ? badge.textContent : ''
+      };
+    });
+
+    expect(magState.display).toBe('block');
+    expect(magState.hasCanvas).toBe(true);
+    expect(magState.hasDot).toBe(true);
+    expect(magState.hasHLine).toBe(true);
+    expect(magState.hasVLine).toBe(true);
+    expect(magState.cornerText).toBe('TL');
+    expect(magState.badgeText).toContain('2.5x');
+
+    await page.mouse.up();
+
+    // After mouse up, magnifier is hidden
+    const isHidden = await page.evaluate(() => {
+      const mag = document.getElementById('cropMagnifier');
+      return mag.style.display === 'none';
+    });
+    expect(isHidden).toBe(true);
+  });
 });
