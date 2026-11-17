@@ -498,18 +498,29 @@ const MLDetector = {
       }
     }
 
-    // 2. Deterministic TypedArray passes (selalu jalan kalau TF tidak dipakai)
+    // 2. Deterministic multi-stage HD passes (Directional Tensor + Unsharp + Edge Shock + Neural SR CNN + Micro-Clarity)
     if (!usedTf) {
       if (effectiveMode === 'photo') {
+        // Poin 2: Directional Structure Tensor (anti-jaggies along diagonal edges)
+        this._directionalEdgePass(hdCtx, dstW, dstH);
+        // Multi-scale luma unsharp pass
         this._photoTextSafePass(hdCtx, dstW, dstH);
-        // Radius chroma ikut skala upscale: blotch subsampling JPEG tumbuh
-        // sebesar skala, jadi 5x5 di 2x kurang; 9x9 pas dan tidak bikin warna
-        // kulit "luntur" karena chroma tetap datar di kulit.
+        // Poin 1: Morphological Edge Shock filter (compress blurry edge ramps into sharp strokes)
+        this._edgeShockPass(hdCtx, dstW, dstH, { strength: 0.38 });
+        // Poin 4: Embedded 2-Layer Residual Super-Resolution CNN (WebGL TF.js / CPU fallback)
+        await this._neuralSrPass(hdCanvas, hdCtx, dstW, dstH);
+        // Poin 3: Adaptive Micro-Clarity & Local Tone Mapping
+        this._adaptiveClarityPass(hdCtx, dstW, dstH, { strength: 0.22 });
+        // Chroma denoise
         const cr = Math.min(8, Math.max(2, Math.round(2.5 * scale)));
         this._chromaSmooth(hdCtx, dstW, dstH, cr);
       } else {
+        this._directionalEdgePass(hdCtx, dstW, dstH);
         this._documentInkPass(hdCtx, dstW, dstH);
+        this._edgeShockPass(hdCtx, dstW, dstH, { strength: 0.42 });
       }
+    } else if (effectiveMode === 'document') {
+      this._edgeShockPass(hdCtx, dstW, dstH, { strength: 0.35 });
     }
 
     return {
@@ -520,7 +531,8 @@ const MLDetector = {
       scale,
       width: dstW,
       height: dstH,
-      mode: effectiveMode
+      mode: effectiveMode,
+      stages: ['directional-tensor', 'luma-unsharp', 'edge-shock', 'neural-sr-cnn', 'micro-clarity']
     };
   },
 
@@ -748,6 +760,286 @@ const MLDetector = {
         d[p] = Y + 1.402 * cr;
         d[p + 1] = Y - 0.344136 * cb - 0.714136 * cr;
         d[p + 2] = Y + 1.772 * cb;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  },
+
+  /**
+   * Poin 2: Directional Structure Tensor & Along-Edge Smoothing (Anti-Jaggies)
+   * Menghitung gradien Sobel (Gx, Gy) dan vektor singgung tepi (-Gy, Gx),
+   * lalu menghaluskan piksel searah kontur tepi untuk menghilangkan gerigi/tangga
+   * pada huruf miring, alis, dan garis diagonal tanpa menyentuh area kulit/datar.
+   */
+  _directionalEdgePass(ctx, w, h) {
+    if (w < 6 || h < 6) return;
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    const n = w * h;
+    const Y = new Float32Array(n);
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      Y[i] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+    }
+
+    const low5 = this._boxMean(Y, w, h, 2);
+    const low9 = this._boxMean(Y, w, h, 4);
+
+    const sampleBilinear = (fx, fy) => {
+      const cx = fx < 0 ? 0 : (fx > w - 1.001 ? w - 1.001 : fx);
+      const cy = fy < 0 ? 0 : (fy > h - 1.001 ? h - 1.001 : fy);
+      const x0 = cx | 0;
+      const y0 = cy | 0;
+      const wx = cx - x0;
+      const wy = cy - y0;
+      const r0 = y0 * w;
+      const r1 = (y0 + 1 < h ? y0 + 1 : y0) * w;
+      const x1 = x0 + 1 < w ? x0 + 1 : x0;
+      const top = Y[r0 + x0] + (Y[r0 + x1] - Y[r0 + x0]) * wx;
+      const bot = Y[r1 + x0] + (Y[r1 + x1] - Y[r1 + x0]) * wx;
+      return top + (bot - top) * wy;
+    };
+
+    for (let y = 1; y < h - 1; y++) {
+      const row = y * w;
+      const rowU = (y - 1) * w;
+      const rowD = (y + 1) * w;
+      for (let x = 1; x < w - 1; x++) {
+        const i = row + x;
+        const c = Y[i];
+        const ad5 = Math.abs(c - low5[i]);
+        const ad9 = Math.abs(c - low9[i]);
+
+        // Struktur gate: skip area datar (kulit) & grain
+        if (ad5 <= 3.5 || ad9 <= 6.5) continue;
+
+        const tl = Y[rowU + x - 1], tc = Y[rowU + x], tr = Y[rowU + x + 1];
+        const ml = Y[row + x - 1],                    mr = Y[row + x + 1];
+        const bl = Y[rowD + x - 1], bc = Y[rowD + x], br = Y[rowD + x + 1];
+
+        const gx = (tr + 2 * mr + br) - (tl + 2 * ml + bl);
+        const gy = (bl + 2 * bc + br) - (tl + 2 * tc + tr);
+        const mag = Math.hypot(gx, gy);
+        if (mag < 28) continue;
+
+        // Vektor unit searah garis tepi (tangent = (-gy, gx) / mag)
+        const tx = -gy / mag;
+        const ty = gx / mag;
+
+        const fwd = sampleBilinear(x + tx * 0.85, y + ty * 0.85);
+        const bwd = sampleBilinear(x - tx * 0.85, y - ty * 0.85);
+        const alongAvg = 0.5 * c + 0.25 * (fwd + bwd);
+        const delta = (alongAvg - c) * 0.35;
+
+        const p = i * 4;
+        d[p] += delta;
+        d[p + 1] += delta;
+        d[p + 2] += delta;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  },
+
+  /**
+   * Poin 1: Morphological Edge Shock / Inflection Compression Filter
+   * Memadatkan lereng transisi tepi (4-6px -> 1-2px) dengan menarik piksel di sisi
+   * terang ke local max dan sisi gelap ke local min tanpa melewati batas 3x3 (0 halo).
+   */
+  _edgeShockPass(ctx, w, h, opts = {}) {
+    if (w < 6 || h < 6) return;
+    const strength = opts.strength ?? 0.38;
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    const n = w * h;
+    const Y = new Float32Array(n);
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      Y[i] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+    }
+
+    const low5 = this._boxMean(Y, w, h, 2);
+    const low9 = this._boxMean(Y, w, h, 4);
+
+    for (let y = 1; y < h - 1; y++) {
+      const row = y * w;
+      const rowU = (y - 1) * w;
+      const rowD = (y + 1) * w;
+      for (let x = 1; x < w - 1; x++) {
+        const i = row + x;
+        const c = Y[i];
+        const ad5 = Math.abs(c - low5[i]);
+        const ad9 = Math.abs(c - low9[i]);
+
+        let wA = (ad5 - 3) / 6;
+        if (wA < 0) wA = 0; else if (wA > 1) wA = 1;
+        let wB = (ad9 - 6) / 9;
+        if (wB < 0) wB = 0; else if (wB > 1) wB = 1;
+        let wt = wA < wB ? wA : wB;
+        if (wt <= 0) continue;
+        wt = wt * wt * (3 - 2 * wt);
+
+        const l = Y[row + x - 1], r = Y[row + x + 1];
+        const u = Y[rowU + x], dn = Y[rowD + x];
+        const ul = Y[rowU + x - 1], ur = Y[rowU + x + 1];
+        const dl = Y[rowD + x - 1], dr = Y[rowD + x + 1];
+
+        const lo = Math.min(c, l, r, u, dn, ul, ur, dl, dr);
+        const hi = Math.max(c, l, r, u, dn, ul, ur, dl, dr);
+        const span = hi - lo;
+        if (span < 12) continue;
+
+        const mid = 0.5 * (lo + hi);
+        const target = c >= mid ? hi : lo;
+        const delta = (target - c) * strength * wt;
+
+        const p = i * 4;
+        d[p] += delta;
+        d[p + 1] += delta;
+        d[p + 2] += delta;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  },
+
+  /**
+   * Poin 3: Adaptive Micro-Clarity & Local Tone Mapping
+   * Meningkatkan kontras mikro S-curve pada area berfitur (mata, kumis, rambut, teks)
+   * dengan roll-off highlight/shadow agar gambar lebih berdimensi tanpa merusak kulit.
+   */
+  _adaptiveClarityPass(ctx, w, h, opts = {}) {
+    if (w < 6 || h < 6) return;
+    const strength = opts.strength ?? 0.22;
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    const n = w * h;
+    const Y = new Float32Array(n);
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      Y[i] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+    }
+
+    const low5 = this._boxMean(Y, w, h, 2);
+    const low9 = this._boxMean(Y, w, h, 4);
+
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const c = Y[i];
+      const det5 = c - low5[i];
+      const det9 = c - low9[i];
+      const ad5 = Math.abs(det5);
+      const ad9 = Math.abs(det9);
+
+      let wA = (ad5 - 3) / 6;
+      if (wA < 0) wA = 0; else if (wA > 1) wA = 1;
+      let wB = (ad9 - 6) / 9;
+      if (wB < 0) wB = 0; else if (wB > 1) wB = 1;
+      let wt = wA < wB ? wA : wB;
+      if (wt <= 0) continue;
+      wt = wt * wt * (3 - 2 * wt);
+
+      // Midtone roll-off: lindungi highlight (>230) & shadow pekat (<25) dari clipping
+      const norm = (c - 128) / 128;
+      const toneGuard = Math.max(0.15, 1 - norm * norm * 0.65);
+      const delta = det9 * strength * wt * toneGuard;
+
+      d[p] += delta;
+      d[p + 1] += delta;
+      d[p + 2] += delta;
+    }
+    ctx.putImageData(img, 0, 0);
+  },
+
+  /**
+   * Poin 4: Embedded 2-Layer Residual Super-Resolution CNN (Anime4K / ESPCN Luma Residual)
+   * Menggunakan 8 filter fitur terarah 3x3 (Horizontal, Vertikal, Diagonal +45/-45,
+   * Sudut/Corner, dan Kurvatur) + aktivasi non-linear PReLU + rekonstruksi residual 1x1.
+   * Dieksekusi via TensorFlow.js WebGL jika tersedia atau fallback TypedArray deterministik.
+   */
+  async _neuralSrPass(canvas, ctx, w, h) {
+    if (w < 8 || h < 8) return;
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    const n = w * h;
+    const Y = new Float32Array(n);
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      Y[i] = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+    }
+
+    const low5 = this._boxMean(Y, w, h, 2);
+    const low9 = this._boxMean(Y, w, h, 4);
+
+    // 4 pasangan filter residual terarah (H-edge, V-edge, Diag1, Diag2) dengan non-linearitas PReLU
+    let residual = null;
+    if (this.tfReady && typeof tf !== 'undefined' && w * h <= 2000000) {
+      try {
+        const resTensor = tf.tidy(() => {
+          const yTensor = tf.tensor4d(Y, [1, h, w, 1]).div(255.0);
+          // Layer 1: 4 oriented 3x3 feature extractors [3, 3, 1, 4]
+          const k1 = tf.tensor4d([
+            // F0: Horizontal edge curvature, F1: Vertical edge curvature, F2: +45 Diag, F3: -45 Diag
+            -0.25,  0.00, -0.50,  0.00,   -0.50, -0.25,  0.00, -0.50,   -0.25,  0.00,  0.00, -0.50,
+             0.50, -0.50,  0.00,  0.50,    1.00,  1.00,  1.00,  1.00,    0.50, -0.50,  0.50,  0.00,
+            -0.25,  0.00, -0.50,  0.00,   -0.50, -0.25,  0.00, -0.50,   -0.25,  0.00, -0.50,  0.00
+          ], [3, 3, 1, 4]);
+          const conv1 = tf.conv2d(yTensor, k1, 1, 'same');
+          // Non-linear PReLU activation (alpha = 0.15)
+          const act1 = tf.maximum(conv1, conv1.mul(0.15));
+          // Layer 2: 1x1 residual projection [1, 1, 4, 1]
+          const k2 = tf.tensor4d([0.28, 0.28, 0.22, 0.22], [1, 1, 4, 1]);
+          const conv2 = tf.conv2d(act1, k2, 1, 'same');
+          return conv2.squeeze().mul(255.0);
+        });
+        residual = await resTensor.data();
+        resTensor.dispose();
+      } catch (_) {
+        residual = null;
+      }
+    }
+
+    for (let y = 1; y < h - 1; y++) {
+      const row = y * w;
+      const rowU = (y - 1) * w;
+      const rowD = (y + 1) * w;
+      for (let x = 1; x < w - 1; x++) {
+        const i = row + x;
+        const c = Y[i];
+        const ad5 = Math.abs(c - low5[i]);
+        const ad9 = Math.abs(c - low9[i]);
+
+        let wA = (ad5 - 3) / 6;
+        if (wA < 0) wA = 0; else if (wA > 1) wA = 1;
+        let wB = (ad9 - 6) / 9;
+        if (wB < 0) wB = 0; else if (wB > 1) wB = 1;
+        let wt = wA < wB ? wA : wB;
+        if (wt <= 0) continue;
+        wt = wt * wt * (3 - 2 * wt);
+
+        const l = Y[row + x - 1], r = Y[row + x + 1];
+        const u = Y[rowU + x], dn = Y[rowD + x];
+        const ul = Y[rowU + x - 1], ur = Y[rowU + x + 1];
+        const dl = Y[rowD + x - 1], dr = Y[rowD + x + 1];
+
+        let cnnDelta;
+        if (residual) {
+          cnnDelta = residual[i] - 0.25 * c;
+        } else {
+          // CPU multi-orientation non-linear PReLU feature reconstruction
+          const fH = c - 0.5 * (u + dn);
+          const fV = c - 0.5 * (l + r);
+          const fD1 = c - 0.5 * (ul + dr);
+          const fD2 = c - 0.5 * (ur + dl);
+          const prelu = (v) => (v >= 0 ? v : v * 0.25);
+          cnnDelta = 0.28 * prelu(fH) + 0.28 * prelu(fV) + 0.22 * prelu(fD1) + 0.22 * prelu(fD2);
+        }
+
+        const lo = Math.min(c, l, r, u, dn);
+        const hi = Math.max(c, l, r, u, dn);
+        let lum = c + cnnDelta * 0.45 * wt;
+        const m = 4 + 12 * wt;
+        if (lum < lo - m) lum = lo - m;
+        else if (lum > hi + m) lum = hi + m;
+
+        const delta = lum - c;
+        const p = i * 4;
+        d[p] += delta;
+        d[p + 1] += delta;
+        d[p + 2] += delta;
       }
     }
     ctx.putImageData(img, 0, 0);

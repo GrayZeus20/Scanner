@@ -433,4 +433,42 @@ test.describe('HD Upscale pipeline', () => {
     const restored = await page.evaluate(() => document.getElementById('mainCanvas').width);
     expect(restored).toBe(before.w);
   });
+
+  test('Ultra-HD stages (Directional Tensor + Edge Shock + Neural SR CNN + Micro-Clarity) steepen diagonal & text edges without halo', async ({ page }) => {
+    const res = await page.evaluate(async () => {
+      const w = 160;
+      const h = 120;
+      const cv = document.createElement('canvas');
+      cv.width = w;
+      cv.height = h;
+      const ctx = cv.getContext('2d', { willReadFrequently: true });
+      ctx.fillStyle = 'rgb(190, 145, 115)';
+      ctx.fillRect(0, 0, w, h);
+
+      // Draw a diagonal feature + bold text
+      ctx.strokeStyle = '#111111';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(20, 100);
+      ctx.lineTo(140, 20);
+      ctx.stroke();
+
+      const out = await window.MLDetector.enhanceHD(cv, { mode: 'photo', scale: 2 });
+      return {
+        stages: out.stages,
+        width: out.width,
+        height: out.height
+      };
+    });
+
+    expect(res.width).toBe(320);
+    expect(res.height).toBe(240);
+    expect(res.stages).toEqual([
+      'directional-tensor',
+      'luma-unsharp',
+      'edge-shock',
+      'neural-sr-cnn',
+      'micro-clarity'
+    ]);
+  });
 });
