@@ -298,6 +298,22 @@
             <small data-i18n="cropDesc">Pilih area potong secara manual</small>
           </div>
         </button>
+        <div class="tool-action-card">
+          <button id="toolBatchCropBtn" class="tool-action-btn">
+            <i data-lucide="layers" aria-hidden="true"></i>
+            <div>
+              <strong data-i18n="batchCrop">Potong Otomatis Semua</strong>
+              <small data-i18n="batchCropDesc">Deteksi sudut & luruskan seluruh halaman sekaligus</small>
+            </div>
+          </button>
+          <div class="upscale-scales-row">
+            <label for="autoCropOnImportToggle" class="upscale-label" data-i18n="autoCropImport" style="flex:1; cursor:pointer; text-transform:none; font-size:12px;">Otomatis luruskan saat impor</label>
+            <label class="toggle">
+              <input type="checkbox" id="autoCropOnImportToggle">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
         <button id="toolFilterBtn" class="tool-action-btn">
           <i data-lucide="sliders-horizontal" aria-hidden="true"></i>
           <div>
@@ -317,6 +333,20 @@
           <div>
             <strong data-i18n="removeObj">Hapus Objek</strong>
             <small data-i18n="removeObjDesc">Hapus noda / teks (Lokal)</small>
+          </div>
+        </button>
+        <button id="toolShadowRemoveBtn" class="tool-action-btn">
+          <i data-lucide="sun-medium" aria-hidden="true"></i>
+          <div>
+            <strong data-i18n="shadowRemove">Hapus Bayangan</strong>
+            <small data-i18n="shadowRemoveDesc">Ratakan pencahayaan & bersihkan bayangan kertas</small>
+          </div>
+        </button>
+        <button id="toolSignatureBtn" class="tool-action-btn">
+          <i data-lucide="pen-tool" aria-hidden="true"></i>
+          <div>
+            <strong data-i18n="signatureWatermark">Tanda Tangan & Watermark</strong>
+            <small data-i18n="signatureWatermarkDesc">Bubuhkan tanda tangan digital atau cap teks</small>
           </div>
         </button>
         <div class="tool-action-card">
@@ -414,6 +444,13 @@
           <input type="range" id="filterThreshold" min="1" max="254" value="128" class="filter-slider">
           <span id="thresholdVal" class="filter-val">128</span>
         </div>
+        <div class="filter-group toggle-group">
+          <label for="filterShadowRemove" data-i18n="shadowRemove">Hapus Bayangan</label>
+          <label class="toggle">
+            <input type="checkbox" id="filterShadowRemove">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
         <div class="filter-divider"></div>
         <div class="filter-row">
         <button id="rotateLeftBtn" class="filter-action-btn" aria-label="Rotate Left">
@@ -441,6 +478,10 @@
           <button id="compareFilterBtn" class="btn btn-secondary">
             <i data-lucide="eye" aria-hidden="true"></i>
             <span data-i18n="beforeAfter">Sebelum/Sesudah</span>
+          </button>
+          <button id="applyFilterAllBtn" class="btn btn-secondary" type="button">
+            <i data-lucide="copy-check" aria-hidden="true"></i>
+            <span data-i18n="applyFilterAll">Terapkan ke Semua</span>
           </button>
           <button id="resetFilterBtn" class="btn btn-danger">
             <i data-lucide="rotate-ccw" aria-hidden="true"></i>
@@ -554,6 +595,13 @@
           <input type="range" id="exportQuality" min="10" max="100" value="85" class="filter-slider">
           <span id="exportQualityVal" class="filter-val">85%</span>
         </div>
+        <div class="filter-group toggle-group" id="searchablePdfGroup">
+          <label for="searchablePdfToggle" data-i18n="searchablePdf">Searchable PDF (Teks OCR)</label>
+          <label class="toggle">
+            <input type="checkbox" id="searchablePdfToggle" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
         <div class="filter-divider"></div>
         <div class="dl-grid">
           <button class="export-btn dl-card" data-format="pdf">
@@ -645,6 +693,74 @@
         <div class="session-guard-actions">
           <button id="permAllowBtn" class="btn btn-primary"><i data-lucide="check" aria-hidden="true"></i><span data-i18n="permFolderAllow">Izinkan</span></button>
           <button id="permDenyBtn" class="btn btn-secondary"><span data-i18n="sessionGuardCancel">Batal</span></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Digital Signature & Watermark Modal -->
+    <div id="signatureModal" class="pdf-preview-modal hidden" role="dialog" aria-modal="true" aria-label="Tanda Tangan & Watermark" inert>
+      <div class="pdf-preview-backdrop" id="signatureBackdrop"></div>
+      <div class="pdf-preview-content signature-modal-content">
+        <div class="pdf-preview-header">
+          <h3 data-i18n="signatureWatermark">Tanda Tangan & Watermark</h3>
+          <button id="closeSignatureModal" class="icon-btn" aria-label="Close" title="Close"><i data-lucide="x" aria-hidden="true"></i></button>
+        </div>
+        <div class="sig-tabs" role="tablist">
+          <button type="button" id="tabSignatureBtn" class="sig-tab-btn active" data-tab="signature" data-i18n="tabSignature">Tanda Tangan</button>
+          <button type="button" id="tabWatermarkBtn" class="sig-tab-btn" data-tab="watermark" data-i18n="tabWatermark">Watermark Teks</button>
+        </div>
+        <!-- Tab 1: Signature Pad -->
+        <div id="sigPaneSignature" class="sig-pane">
+          <div class="sig-canvas-wrap">
+            <canvas id="signaturePadCanvas" width="440" height="170"></canvas>
+          </div>
+          <div class="sig-controls-row">
+            <div class="sig-colors" aria-label="Warna Tinta">
+              <button type="button" class="sig-color-btn active" data-color="#0f172a" style="background:#0f172a" aria-label="Hitam"></button>
+              <button type="button" class="sig-color-btn" data-color="#1d4ed8" style="background:#1d4ed8" aria-label="Biru"></button>
+              <button type="button" class="sig-color-btn" data-color="#dc2626" style="background:#dc2626" aria-label="Merah"></button>
+            </div>
+            <select id="signaturePosition" class="lang-select" aria-label="Posisi Tanda Tangan">
+              <option value="br">Kanan Bawah</option>
+              <option value="bl">Kiri Bawah</option>
+              <option value="bc">Tengah Bawah</option>
+              <option value="cc">Tengah</option>
+            </select>
+          </div>
+          <div class="sig-actions-row">
+            <button type="button" id="clearSignatureBtn" class="btn btn-secondary"><i data-lucide="eraser" aria-hidden="true"></i><span data-i18n="clearSignature">Bersihkan</span></button>
+            <button type="button" id="applySignatureBtn" class="btn btn-primary"><i data-lucide="check" aria-hidden="true"></i><span data-i18n="applySignature">Tempel Tanda Tangan</span></button>
+          </div>
+        </div>
+        <!-- Tab 2: Watermark Stamp -->
+        <div id="sigPaneWatermark" class="sig-pane hidden">
+          <div class="wm-field">
+            <label for="watermarkTextInput" data-i18n="watermarkText">Teks Watermark</label>
+            <input type="text" id="watermarkTextInput" class="wm-input" value="SALINAN RESMI" maxlength="60" placeholder="Contoh: SALINAN RESMI / VERIFIKASI">
+          </div>
+          <div class="wm-field-row">
+            <label for="watermarkStyle" data-i18n="watermarkStyle">Gaya</label>
+            <select id="watermarkStyle" class="lang-select">
+              <option value="tiled" data-i18n="wmTiled">Diagonal Berulang</option>
+              <option value="single" data-i18n="wmSingle">Diagonal Tengah</option>
+              <option value="stamp" data-i18n="wmStamp">Stempel Kotak</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label for="watermarkOpacity" data-i18n="watermarkOpacity">Transparansi</label>
+            <input type="range" id="watermarkOpacity" min="5" max="80" value="25" class="filter-slider">
+            <span id="watermarkOpacityVal" class="filter-val">25%</span>
+          </div>
+          <div class="sig-controls-row">
+            <div class="sig-colors" aria-label="Warna Watermark">
+              <button type="button" class="wm-color-btn active" data-color="#475569" style="background:#475569" aria-label="Abu-abu"></button>
+              <button type="button" class="wm-color-btn" data-color="#dc2626" style="background:#dc2626" aria-label="Merah"></button>
+              <button type="button" class="wm-color-btn" data-color="#1d4ed8" style="background:#1d4ed8" aria-label="Biru"></button>
+            </div>
+          </div>
+          <div class="sig-actions-row">
+            <button type="button" id="applyWatermarkBtn" class="btn btn-primary" style="width:100%"><i data-lucide="stamp" aria-hidden="true"></i><span data-i18n="applyWatermark">Terapkan Watermark</span></button>
+          </div>
         </div>
       </div>
     </div>

@@ -129,6 +129,8 @@ const ocrEngine = {
       }, timeoutMs);
 
       let result;
+      const procW = processedCanvas.width || canvas.width;
+      const procH = processedCanvas.height || canvas.height;
       try {
         result = await Promise.race([worker.recognize(processedCanvas), guard]);
       } catch (error) {
@@ -137,10 +139,30 @@ const ocrEngine = {
       } finally {
         clearInterval(checkInterval);
         clearTimeout(timeoutId);
+        if (processedCanvas && processedCanvas !== canvas) {
+          processedCanvas.width = 0;
+          processedCanvas.height = 0;
+        }
       }
 
       this._progressCallback = null;
-      return result?.data?.text?.trim() || '';
+      const text = result?.data?.text?.trim() || '';
+      const scaleX = canvas.width / Math.max(1, procW);
+      const scaleY = canvas.height / Math.max(1, procH);
+      const rawWords = Array.isArray(result?.data?.words) ? result.data.words : [];
+      const words = rawWords
+        .filter((w) => w && w.text && w.text.trim() && w.bbox)
+        .map((w) => ({
+          text: w.text.trim(),
+          bbox: {
+            x0: Math.round((w.bbox.x0 || 0) * scaleX),
+            y0: Math.round((w.bbox.y0 || 0) * scaleY),
+            x1: Math.round((w.bbox.x1 || 0) * scaleX),
+            y1: Math.round((w.bbox.y1 || 0) * scaleY)
+          }
+        }));
+      this.lastResult = { text, words, width: canvas.width, height: canvas.height };
+      return text;
     } catch (error) {
       this._progressCallback = null;
       console.error('OCR Error:', error);

@@ -259,5 +259,183 @@ test.describe('New Enhancements Suite', () => {
     await darkBtn.click();
     await expect(page.locator('body')).not.toHaveClass(/dark-mode/);
   });
+
+  test('Feature 1: Valid PDF file is imported as editable pages via deepscan.scanPdfFile', async ({ page }) => {
+    const res = await page.evaluate(async () => {
+      const validPdfContent = [
+        '%PDF-1.4',
+        '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+        '2 0 obj << /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >> endobj',
+        '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >> endobj',
+        '4 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >> endobj',
+        'stream',
+        '(Halaman Satu Uji PDF) Tj',
+        'endstream',
+        'xref',
+        '0 5',
+        'trailer << /Root 1 0 R /Size 5 >>',
+        'startxref',
+        '180',
+        '%%EOF'
+      ].join('\n');
+      const file = new File([validPdfContent], 'dokumen_uji.pdf', { type: 'application/pdf' });
+      const { pages, errors } = await window.deepscan.batchImport([file], { autoCrop: false });
+      return { pageCount: pages.length, errorCount: errors.length, firstName: pages[0]?.name };
+    });
+
+    expect(res.errorCount).toBe(0);
+    expect(res.pageCount).toBe(2);
+    expect(res.firstName).toContain('dokumen_uji_p1');
+  });
+
+  test('Feature 2: Apply filters to all pages and batch auto-crop across session', async ({ page }) => {
+    await page.locator('#fileInput').setInputFiles([
+      { name: 'p1.png', mimeType: 'image/png', buffer: pngBuffer },
+      { name: 'p2.png', mimeType: 'image/png', buffer: pngBuffer }
+    ]);
+    await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/, { timeout: 8000 });
+
+    // Open filter sheet, enable Shadow Remove + B&W, and click Apply to All Pages
+    await page.click('#navTools');
+    await page.click('#toolFilterBtn');
+    await expect(page.locator('#filterSheet')).toBeVisible();
+
+    await page.evaluate(() => {
+      app.state.filters.contrast = 35;
+      app.state.filters.shadowRemove = true;
+      app.applyFiltersToAllPages();
+    });
+
+    const allMatched = await page.evaluate(() => {
+      return app.state.pages.every(p => p._filters && p._filters.contrast === 35 && p._filters.shadowRemove === true);
+    });
+    expect(allMatched).toBe(true);
+  });
+
+  test('Feature 3: Searchable PDF embeds OCR text layer into exported PDF', async ({ page }) => {
+    const hasEmbeddedText = await page.evaluate(async () => {
+      const c = document.createElement('canvas');
+      c.width = 400;
+      c.height = 500;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 400, 500);
+
+      let textCalls = [];
+      const origJsPdf = window.jspdf;
+      window.jspdf = {
+        jsPDF: class {
+          constructor() {
+            this.internal = { pageSize: { getWidth: () => 210, getHeight: () => 297 } };
+          }
+          addPage() {}
+          addImage() {}
+          setTextColor() {}
+          setFontSize() {}
+          text(str, x, y) {
+            textCalls.push({ str, x, y });
+          }
+          output() {
+            return new Blob([JSON.stringify(textCalls)], { type: 'application/pdf' });
+          }
+        }
+      };
+
+      try {
+        await window.pdfExport.toPdfBlobFromPages(
+          1,
+          async () => c,
+          0.85,
+          {
+            searchable: true,
+            getOcrData: () => ({
+              text: 'INVOICE-2026-LUNAS',
+              words: [{ text: 'INVOICE-2026-LUNAS', bbox: { x0: 40, y0: 60, x1: 200, y1: 85 } }],
+              width: 400,
+              height: 500
+            })
+          }
+        );
+        return textCalls.some(call => call.str === 'INVOICE-2026-LUNAS');
+      } finally {
+        window.jspdf = origJsPdf;
+      }
+    });
+
+    expect(hasEmbeddedText).toBe(true);
+  });
+
+  test('Feature 4: Adaptive shadow removal normalizes shadowed paper while keeping dark ink', async ({ page }) => {
+    const stats = await page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 200;
+      c.height = 200;
+      const ctx = c.getContext('2d');
+      // Left half: shadowed paper (rgb 130, 130, 130)
+      ctx.fillStyle = 'rgb(130, 130, 130)';
+      ctx.fillRect(0, 0, 100, 200);
+      // Right half: bright paper (rgb 240, 240, 240)
+      ctx.fillStyle = 'rgb(240, 240, 240)';
+      ctx.fillRect(100, 0, 100, 200);
+      // Dark text stroke inside shadowed half
+      ctx.fillStyle = 'rgb(25, 25, 25)';
+      ctx.fillRect(40, 90, 20, 20);
+
+      const res = window.MLDetector.removeShadows(c);
+      const outCtx = res.canvas.getContext('2d');
+      const shadowPaperPx = outCtx.getImageData(20, 20, 1, 1).data;
+      const inkPx = outCtx.getImageData(50, 100, 1, 1).data;
+
+      return {
+        shadowPaperAfter: shadowPaperPx[0],
+        inkAfter: inkPx[0]
+      };
+    });
+
+    // Shadowed paper (was 130) is lifted above 220
+    expect(stats.shadowPaperAfter).toBeGreaterThan(220);
+    // Dark ink (was 25) stays dark (< 75)
+    expect(stats.inkAfter).toBeLessThan(75);
+  });
+
+  test('Feature 6: Digital Signature & Watermark modal applies signature and watermark with undo', async ({ page }) => {
+    await page.locator('#fileInput').setInputFiles({
+      name: 'test.png',
+      mimeType: 'image/png',
+      buffer: pngBuffer,
+    });
+    await expect(page.locator('#editorArea')).not.toHaveClass(/hidden/, { timeout: 8000 });
+
+    // Open Tools -> Signature & Watermark modal
+    await page.click('#navTools');
+    await page.click('#toolSignatureBtn');
+    await expect(page.locator('#signatureModal')).toBeVisible();
+
+    // Draw a stroke on signature pad and apply
+    const pad = page.locator('#signaturePadCanvas');
+    const box = await pad.boundingBox();
+    await page.mouse.move(box.x + 30, box.y + 40);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 120, box.y + 80, { steps: 5 });
+    await page.mouse.up();
+
+    await page.click('#applySignatureBtn');
+    await expect(page.locator('#signatureModal')).toBeHidden();
+
+    // Undo stack should now have 1 entry
+    const undoLenAfterSig = await page.evaluate(() => app.pageUndoStack()?.length || 0);
+    expect(undoLenAfterSig).toBeGreaterThanOrEqual(1);
+
+    // Reopen modal, switch to Watermark tab, and apply watermark
+    await page.click('#navTools');
+    await page.click('#toolSignatureBtn');
+    await page.click('#tabWatermarkBtn');
+    await page.fill('#watermarkTextInput', 'VERIFIKASI RESMI');
+    await page.click('#applyWatermarkBtn');
+    await expect(page.locator('#signatureModal')).toBeHidden();
+
+    const undoLenAfterWm = await page.evaluate(() => app.pageUndoStack()?.length || 0);
+    expect(undoLenAfterWm).toBeGreaterThan(undoLenAfterSig);
+  });
 });
 

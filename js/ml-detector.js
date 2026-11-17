@@ -428,6 +428,8 @@ const MLDetector = {
 
       // Stage 3: final upscale 2x -> target
       hdCtx.drawImage(midCanvas, 0, 0, dstW, dstH);
+      midCanvas.width = 0;
+      midCanvas.height = 0;
     } else if (scale > 2.0) {
       const midCanvas = document.createElement('canvas');
       midCanvas.width = Math.round(srcW * 1.5);
@@ -437,8 +439,14 @@ const MLDetector = {
       midCtx.imageSmoothingQuality = 'high';
       midCtx.drawImage(srcCanvas, 0, 0, midCanvas.width, midCanvas.height);
       hdCtx.drawImage(midCanvas, 0, 0, dstW, dstH);
+      midCanvas.width = 0;
+      midCanvas.height = 0;
     } else {
       hdCtx.drawImage(srcCanvas, 0, 0, dstW, dstH);
+    }
+    if (srcCanvas && srcCanvas !== canvas) {
+      srcCanvas.width = 0;
+      srcCanvas.height = 0;
     }
 
     let usedTf = false;
@@ -863,6 +871,122 @@ const MLDetector = {
       }
     }
     ctx.putImageData(imgData, 0, 0);
+  },
+
+  /**
+   * Adaptive Document Shadow Removal & Illumination Normalization (100% On-Device)
+   * Estimates a smooth 2D local background illumination surface via morphological
+   * block maxima + separable smoothing, then normalizes uneven lighting/shadows
+   * while preserving dark ink strokes.
+   */
+  removeShadows(canvas, options = {}) {
+    if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
+    const w = canvas.width;
+    const h = canvas.height;
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = w;
+    outCanvas.height = h;
+    const outCtx = outCanvas.getContext('2d', { willReadFrequently: true });
+    outCtx.drawImage(canvas, 0, 0);
+    this.applyShadowRemovalInPlace(outCtx, w, h, options.strength ?? 1.0);
+    return { canvas: outCanvas, width: w, height: h };
+  },
+
+  applyShadowRemovalInPlace(ctx, w, h, strength = 1.0) {
+    if (!ctx || w <= 0 || h <= 0) return false;
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const d = imgData.data;
+
+    const blockSize = Math.max(8, Math.min(32, Math.round(Math.min(w, h) / 20)));
+    const gridW = Math.max(2, Math.ceil(w / blockSize));
+    const gridH = Math.max(2, Math.ceil(h / blockSize));
+    let bgGrid = new Float32Array(gridW * gridH);
+
+    // 1. Estimate local paper illumination per block (morphological dilation / local max)
+    for (let gy = 0; gy < gridH; gy++) {
+      const y0 = gy * blockSize;
+      const y1 = Math.min(h, y0 + blockSize);
+      for (let gx = 0; gx < gridW; gx++) {
+        const x0 = gx * blockSize;
+        const x1 = Math.min(w, x0 + blockSize);
+        let maxLum = 0;
+        const step = (x1 - x0 > 8 && y1 - y0 > 8) ? 2 : 1;
+        for (let y = y0; y < y1; y += step) {
+          const row = y * w * 4;
+          for (let x = x0; x < x1; x += step) {
+            const p = row + x * 4;
+            const lum = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
+            if (lum > maxLum) maxLum = lum;
+          }
+        }
+        bgGrid[gy * gridW + gx] = Math.max(65, maxLum);
+      }
+    }
+
+    // 2. Smooth the illumination grid so shadow transitions are seamless
+    bgGrid = this._boxMean(bgGrid, gridW, gridH, 1);
+    bgGrid = this._boxMean(bgGrid, gridW, gridH, 1);
+
+    // 3. Bilinear illumination division + ink contrast preservation
+    const mix = Math.max(0, Math.min(1, strength));
+    const invMix = 1 - mix;
+
+    for (let y = 0; y < h; y++) {
+      const fy = Math.max(0, Math.min(gridH - 1.0001, (y + 0.5) / blockSize - 0.5));
+      const gy0 = fy | 0;
+      const gy1 = Math.min(gridH - 1, gy0 + 1);
+      const wy = fy - gy0;
+      const row = y * w * 4;
+
+      for (let x = 0; x < w; x++) {
+        const fx = Math.max(0, Math.min(gridW - 1.0001, (x + 0.5) / blockSize - 0.5));
+        const gx0 = fx | 0;
+        const gx1 = Math.min(gridW - 1, gx0 + 1);
+        const wx = fx - gx0;
+
+        const b00 = bgGrid[gy0 * gridW + gx0];
+        const b10 = bgGrid[gy0 * gridW + gx1];
+        const b01 = bgGrid[gy1 * gridW + gx0];
+        const b11 = bgGrid[gy1 * gridW + gx1];
+        const bgTop = b00 + (b10 - b00) * wx;
+        const bgBot = b01 + (b11 - b01) * wx;
+        const bg = Math.max(60, bgTop + (bgBot - bgTop) * wy);
+
+        const p = row + x * 4;
+        const r = d[p];
+        const g = d[p + 1];
+        const b = d[p + 2];
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        const gain = 248 / bg;
+
+        let nr = r * gain;
+        let ng = g * gain;
+        let nb = b * gain;
+
+        if (lum > bg * 0.78) {
+          // Lift shadowed paper background cleanly toward white
+          nr = nr + (255 - nr) * 0.35;
+          ng = ng + (255 - ng) * 0.35;
+          nb = nb + (255 - nb) * 0.35;
+        } else if (lum < bg * 0.55) {
+          // Keep text/ink strokes crisp and dark
+          nr *= 0.88;
+          ng *= 0.88;
+          nb *= 0.88;
+        }
+
+        nr = nr > 255 ? 255 : (nr < 0 ? 0 : nr);
+        ng = ng > 255 ? 255 : (ng < 0 ? 0 : ng);
+        nb = nb > 255 ? 255 : (nb < 0 ? 0 : nb);
+
+        d[p] = (r * invMix + nr * mix) | 0;
+        d[p + 1] = (g * invMix + ng * mix) | 0;
+        d[p + 2] = (b * invMix + nb * mix) | 0;
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    return true;
   },
 
   /**

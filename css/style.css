@@ -2621,3 +2621,131 @@ html, body {
   align-items: center;
   justify-content: center;
 }
+
+/* ─── Digital Signature & Watermark Modal ─────────────────────── */
+.signature-modal-content {
+  max-width: 480px;
+  width: calc(100% - 32px);
+}
+
+.sig-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 0 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sig-tab-btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.sig-tab-btn.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+.sig-pane {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sig-canvas-wrap {
+  width: 100%;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#signaturePadCanvas {
+  width: 100%;
+  height: 160px;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.sig-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sig-colors {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sig-color-btn,
+.wm-color-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border);
+  cursor: pointer;
+  padding: 0;
+}
+
+.sig-color-btn.active,
+.wm-color-btn.active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-background), 0 0 0 4px var(--color-primary);
+}
+
+.sig-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.sig-actions-row .btn {
+  flex: 1;
+}
+
+.wm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.wm-field label,
+.wm-field-row label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-foreground);
+}
+
+.wm-field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wm-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  color: var(--color-foreground);
+}

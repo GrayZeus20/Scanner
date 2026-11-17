@@ -23,8 +23,14 @@ const app = {
       sepia: false,
       invert: false,
       bw: false,
-      threshold: 128
+      threshold: 128,
+      shadowRemove: false
     },
+    autoCropOnImport: false,
+    searchablePdf: true,
+    sigColor: '#0f172a',
+    wmColor: '#475569',
+    _sigHasInk: false,
     ocrAborted: false,
     isAnalyzing: false,
     isOcrRunning: false,
@@ -425,7 +431,8 @@ const app = {
             const m = document.getElementById('permissionModal');
             m.classList.add('hidden');
             m.setAttribute('inert', '');
-          }]
+          }],
+          ['signatureModal', () => this.closeSignatureModal()]
         ];
         for (const [modalId, close] of modals) {
           const modal = document.getElementById(modalId);
@@ -594,6 +601,21 @@ const app = {
       this.startInpaint();
       this.toggleSheet('toolsSheet', false);
     });
+    document.getElementById('toolBatchCropBtn')?.addEventListener('click', async () => {
+      this.toggleSheet('toolsSheet', false);
+      await this.batchAutoCropAllPages();
+    });
+    document.getElementById('autoCropOnImportToggle')?.addEventListener('change', (e) => {
+      this.state.autoCropOnImport = !!e.target.checked;
+    });
+    document.getElementById('toolShadowRemoveBtn')?.addEventListener('click', async () => {
+      this.toggleSheet('toolsSheet', false);
+      await this.removeDocumentShadows();
+    });
+    document.getElementById('toolSignatureBtn')?.addEventListener('click', () => {
+      this.toggleSheet('toolsSheet', false);
+      this.openSignatureModal();
+    });
     document.getElementById('toolHdEnhanceBtn')?.addEventListener('click', () => {
       this.enhanceHd(this.state.upscaleScale || 2.0);
       this.toggleSheet('toolsSheet', false);
@@ -681,9 +703,16 @@ const app = {
     document.getElementById('undoBtn').addEventListener('click', () => this.undo());
     document.getElementById('redoBtn').addEventListener('click', () => this.redo());
 
+    document.getElementById('ocrResult')?.addEventListener('input', () => {
+      const page = this.state.pages[this.state.currentPageIndex];
+      const txt = document.getElementById('ocrResult')?.innerText?.trim() || '';
+      if (page && txt) page.ocrText = txt;
+    });
+
     this.initFilterControls();
     this.initExportButtons();
     this.initZoomControls();
+    this.initSignatureControls();
   },
 
   renderDlPreviewStrip() {
@@ -977,13 +1006,14 @@ const app = {
    */
   async importBatch(files) {
     if (!files || files.length === 0) return;
-    const images = files.filter((file) =>
+    const supported = files.filter((file) =>
+      deepscan.isPdfFile(file) ||
       deepscan.ACCEPTED_TYPES.includes(file.type) ||
       deepscan.ACCEPTED_EXTENSIONS.some((ext) => (file.name || '').toLowerCase().endsWith(ext))
     );
-    const unsupported = files.length - images.length;
+    const unsupported = files.length - supported.length;
 
-    if (images.length === 0) {
+    if (supported.length === 0) {
       this.showToast(files[0]?.type === 'application/pdf' ? t('pdfNotSupported') : t('unsupportedFile'), 'error');
       return;
     }
@@ -993,8 +1023,8 @@ const app = {
       this.showToast(t('sessionFull'), 'error');
       return;
     }
-    const batch = images.slice(0, capacity);
-    const rejected = unsupported + images.length - batch.length;
+    const batch = supported.slice(0, capacity);
+    const rejected = unsupported + supported.length - batch.length;
 
     this.showToast(t('processing'));
 
@@ -1002,8 +1032,10 @@ const app = {
     this._importing = true;
     this.syncUndoRedoLock();
     try {
-      // ponytail: autoCrop warp off on import — keeps original dims (crop.spec floor); flip true + adjust tests if auto-warp on import wanted
-      const { pages, errors } = await deepscan.batchImport(batch, { autoCrop: false, createSession: false });
+      const { pages, errors } = await deepscan.batchImport(batch, {
+        autoCrop: !!this.state.autoCropOnImport,
+        createSession: false
+      });
 
       // If editor already has an open unsaved doc, guard before appending new pages
       if (this.state.pages.length > 0 && this.state.dirty) {
@@ -1042,8 +1074,21 @@ const app = {
 
     // Append: batch adds pages into current working doc (1 sesi = semua gambar kerja)
     const startIdx = this.state.pages.length;
-    pages.forEach((p) => {
-      this.state.pages.push({ originalImage: null, currentImageData: null, name: p.name, pendingSrc: p.image, w: p.w, h: p.h });
+    pages.forEach((p, idx) => {
+      this.state.pages.push({
+        originalImage: null,
+        currentImageData: null,
+        name: p.name,
+        pendingSrc: p.image,
+        w: p.w,
+        h: p.h,
+        detected: !!p.detected,
+        confidence: p.confidence || 0,
+        corners: p.corners || null,
+        category: p.category || 'Dokumen',
+        quality: p.quality || null,
+        needsAutoEnhance: idx === 0
+      });
     });
     this.state.currentPageIndex = startIdx;
     this.state.dirty = true;
@@ -1073,8 +1118,10 @@ const app = {
     if (!page) return;
     if (page.pendingSrc) {
       // keep pendingSrc until img.onload attaches originalImage (session:create may map it first)
-      // opts.enhance: hanya halaman pertama sesi/import yang di-auto-enhance
-      this.loadImageFromSrc(page.pendingSrc, { keepSession: true, index, enhance: index === this.state.currentPageIndex });
+      // opts.enhance: hanya halaman pertama sesi/import baru yang di-auto-enhance
+      const shouldEnhance = !!page.needsAutoEnhance;
+      page.needsAutoEnhance = false;
+      this.loadImageFromSrc(page.pendingSrc, { keepSession: true, index, enhance: shouldEnhance });
     } else if (page.originalImage) {
       this.renderPage(index);
     }
@@ -1166,10 +1213,17 @@ const app = {
   renderPage(index) {
     const page = this.state.pages[index];
     if (!page) return;
-    if (!page.originalImage) { this.renderPendingPage(index); return; }
-    this.renderImage(page.originalImage);
     this.state.currentPageIndex = index;
+    if (!page.originalImage) { this.renderPendingPage(index); return; }
+    if (page._filters) {
+      this.state.filters = { ...page._filters };
+      this.updateFilterUI();
+    } else {
+      this.resetFiltersSilent();
+    }
+    this.renderImage(page.originalImage);
     this.resetZoom();
+    this.updateUndoRedoUI();
   },
 
   updatePagesTray() {
@@ -1314,6 +1368,15 @@ const app = {
       this.applyFilters();
     });
 
+    document.getElementById('filterShadowRemove')?.addEventListener('change', (e) => {
+      this.state.filters.shadowRemove = e.target.checked;
+      this.applyFilters();
+    });
+
+    document.getElementById('applyFilterAllBtn')?.addEventListener('click', () => {
+      this.applyFiltersToAllPages();
+    });
+
     document.getElementById('rotateLeftBtn').addEventListener('click', () => this.rotate(-90));
     document.getElementById('rotateRightBtn').addEventListener('click', () => this.rotate(90));
     document.getElementById('flipHBtn').addEventListener('click', () => this.flip('horizontal'));
@@ -1349,6 +1412,9 @@ const app = {
       });
     });
 
+    document.getElementById('searchablePdfToggle')?.addEventListener('change', (e) => {
+      this.state.searchablePdf = !!e.target.checked;
+    });
     document.getElementById('pickFolderBtn')?.addEventListener('click', () => this.pickDownloadFolder());
     document.getElementById('saveToFolderBtn')?.addEventListener('click', () => {
       if (this.state.pages.length === 0) { this.showToast(t('noPagesYet'), 'error'); return; }
@@ -1481,7 +1547,11 @@ const app = {
         const blob = await pdfExport.toPdfBlobFromPages(
           this.state.pages.length,
           (index) => this.renderPageForPdf(index),
-          quality
+          quality,
+          {
+            searchable: this.state.searchablePdf !== false,
+            getOcrData: (index) => this.getPageOcrData(index)
+          }
         );
         jobs = [{ name: `${base}.pdf`, blob }];
       } else if (format === 'batchJpg') {
@@ -1546,13 +1616,21 @@ const app = {
 
   async applyFilters() {
     if (!this.state.imageLoaded) return;
-    if (this._filterPending) return;
+    const currentPage = this.state.pages[this.state.currentPageIndex];
+    if (currentPage) {
+      currentPage._filters = { ...this.state.filters };
+    }
+    if (this._filterPending) {
+      this._filterQueued = true;
+      return;
+    }
     this._filterPending = true;
     try {
-      const page = this.state.pages[this.state.currentPageIndex];
+      const pageIndex = this.state.currentPageIndex;
+      const page = this.state.pages[pageIndex];
       if (!page || !page.originalImage) return;
 
-      const filters = this.state.filters;
+      const filters = { ...(page._filters || this.state.filters) };
       const canvas = this.canvas;
       const ctx = this.ctx;
       const img = page.originalImage;
@@ -1578,6 +1656,10 @@ const app = {
       // Reset filter after drawing so getImageData reads actual pixel values
       ctx.filter = 'none';
 
+      if (filters.shadowRemove && window.MLDetector?.applyShadowRemovalInPlace) {
+        window.MLDetector.applyShadowRemovalInPlace(ctx, canvas.width, canvas.height, 1.0);
+      }
+
       if (filters.bw) {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imageData.data;
@@ -1598,12 +1680,15 @@ const app = {
         }
       }
 
-      page.currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      // Snapshot filter halaman ini — dipakai renderPageForPdf agar filter
-      // tidak bocor antar halaman saat ekspor multi-halaman
-      page._filters = { ...this.state.filters };
+      if (this.state.currentPageIndex === pageIndex) {
+        page.currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      }
     } finally {
       this._filterPending = false;
+      if (this._filterQueued) {
+        this._filterQueued = false;
+        await this.applyFilters();
+      }
     }
   },
 
@@ -1956,7 +2041,7 @@ const app = {
   resetFilters() {
     this.state.filters = {
       brightness: 0, contrast: 0, saturation: 0, sharpness: 0,
-      grayscale: false, sepia: false, invert: false, bw: false, threshold: 128
+      grayscale: false, sepia: false, invert: false, bw: false, threshold: 128, shadowRemove: false
     };
     document.getElementById('filterBrightness').value = 0;
     document.getElementById('filterContrast').value = 0;
@@ -1966,6 +2051,8 @@ const app = {
     document.getElementById('filterSepia').checked = false;
     document.getElementById('filterInvert').checked = false;
     document.getElementById('filterBW').checked = false;
+    const srEl = document.getElementById('filterShadowRemove');
+    if (srEl) srEl.checked = false;
     document.getElementById('filterThreshold').value = 128;
     document.getElementById('brightnessVal').textContent = '0';
     document.getElementById('contrastVal').textContent = '0';
@@ -2145,7 +2232,7 @@ const app = {
   resetFiltersSilent() {
     this.state.filters = {
       brightness: 0, contrast: 0, saturation: 0, sharpness: 0,
-      grayscale: false, sepia: false, invert: false, bw: false, threshold: 128
+      grayscale: false, sepia: false, invert: false, bw: false, threshold: 128, shadowRemove: false
     };
     this.updateFilterUI();
   },
@@ -2225,6 +2312,13 @@ const app = {
   },
 
   async autoEnhance() {
+    if (window.MLDetector?.detectContentType && this.canvas?.width > 0) {
+      if (window.MLDetector.detectContentType(this.canvas) === 'photo') {
+        const page = this.state.pages[this.state.currentPageIndex];
+        if (page) page._filters = { ...this.state.filters };
+        return;
+      }
+    }
     this.state.filters.sharpness = config.AUTO_ENHANCE.sharpness;
     this.state.filters.contrast = config.AUTO_ENHANCE.contrast;
     
@@ -2348,6 +2442,13 @@ const app = {
       }, () => this.state.ocrAborted, selectedLang);
       if (!this.state.ocrAborted) {
         resultDiv.innerText = text || '(Tidak ada teks terdeteksi)';
+        const curPage = this.state.pages[this.state.currentPageIndex];
+        if (curPage && text) {
+          curPage.ocrText = text;
+          curPage.ocrWords = ocrEngine.lastResult?.words || [];
+          curPage.ocrWidth = ocrEngine.lastResult?.width || this.canvas.width;
+          curPage.ocrHeight = ocrEngine.lastResult?.height || this.canvas.height;
+        }
         this.showToast(t('ocrDone'));
       }
     } catch (err) {
@@ -2463,16 +2564,39 @@ const app = {
 
       this.state.canvasWidth = result.canvas.width;
       this.state.canvasHeight = result.canvas.height;
+      this.state.logicalWidth = result.canvas.width;
+      this.state.logicalHeight = result.canvas.height;
 
       // Simpan hasil HD tanpa re-compress yang bikin teks "pecah" lagi:
       // PNG untuk kanvas kecil/sedang, JPEG kualitas tinggi hanya untuk kanvas besar.
       // (toDataURL jpeg 0.95 sebelumnya justru menambah ringing di tepi huruf)
       const lossless = (result.width * result.height) <= 2500000;
-      const newImg = new Image();
-      newImg.src = lossless
+      const hdDataUrl = lossless
         ? result.canvas.toDataURL('image/png')
         : result.canvas.toDataURL('image/jpeg', 0.97);
+      result.canvas.width = 0;
+      result.canvas.height = 0;
+
+      const newImg = new Image();
+      newImg.src = hdDataUrl;
       await new Promise(res => { newImg.onload = res; });
+
+      // Reset default auto-enhance filters because HD output already has optimal sharpening/contrast baked in
+      if (
+        this.state.filters.sharpness === config.AUTO_ENHANCE.sharpness &&
+        this.state.filters.contrast === config.AUTO_ENHANCE.contrast
+      ) {
+        this.state.filters.sharpness = 0;
+        this.state.filters.contrast = 0;
+        this.updateFilterUI();
+      }
+      const curPage = this.state.pages[this.state.currentPageIndex];
+      if (curPage) {
+        curPage.w = result.width;
+        curPage.h = result.height;
+        curPage._filters = { ...this.state.filters };
+      }
+
       this.setCurrentPageImage(newImg);
       this.state.dirty = true;
 
@@ -2669,6 +2793,8 @@ const app = {
     document.getElementById('filterSepia').checked = f.sepia;
     document.getElementById('filterInvert').checked = f.invert;
     document.getElementById('filterBW').checked = f.bw;
+    const srCheckbox = document.getElementById('filterShadowRemove');
+    if (srCheckbox) srCheckbox.checked = !!f.shadowRemove;
     document.getElementById('thresholdGroup').classList.toggle('hidden', !f.bw);
   },
 
@@ -2739,7 +2865,11 @@ const app = {
         const blob = await pdfExport.toPdfBlobFromPages(
           this._pdfPreviewPageCount,
           (index) => this.renderPageForPdf(index),
-          quality
+          quality,
+          {
+            searchable: this.state.searchablePdf !== false,
+            getOcrData: (index) => this.getPageOcrData(index)
+          }
         );
         const usedFolder = await this.saveFiles([{ name: `${base}.pdf`, blob }]);
         this.showDlProgress(true, 100, t('downloadDone'));
@@ -2844,6 +2974,10 @@ const app = {
     ].filter(Boolean).join(' ');
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
+    if (filters.shadowRemove && window.MLDetector?.applyShadowRemovalInPlace) {
+      window.MLDetector.applyShadowRemovalInPlace(ctx, canvas.width, canvas.height, 1.0);
+    }
+
     if (filters.bw) {
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
@@ -2875,7 +3009,7 @@ const app = {
     const src = imageData.data;
     const out = new ImageData(width, height);
     const dst = out.data;
-    const k = amount / 100; // 0..1
+    const k = amount / 50; // sinkron dengan filter-worker.js
     const center = 1 + 4 * k;
     const neighbor = -k;
     for (let y = 0; y < height; y++) {
@@ -2893,6 +3027,437 @@ const app = {
       }
     }
     return out;
+  },
+
+  getPageOcrData(index) {
+    const page = this.state.pages[index];
+    if (!page) return null;
+    if (page.ocrText || (page.ocrWords && page.ocrWords.length > 0)) {
+      return {
+        text: page.ocrText || '',
+        words: page.ocrWords || [],
+        width: page.ocrWidth || page.w || this.canvas.width,
+        height: page.ocrHeight || page.h || this.canvas.height
+      };
+    }
+    if (index === this.state.currentPageIndex) {
+      const ocrResultDiv = document.getElementById('ocrResult');
+      const raw = ocrResultDiv ? ocrResultDiv.innerText.trim() : '';
+      const placeholders = [t('processing'), t('ocrStarting'), t('ocrCancelled'), '(Tidak ada teks terdeteksi)', 'Memproses...'];
+      if (raw && !placeholders.some(p => raw === p || raw.includes(p))) {
+        return { text: raw, words: [], width: this.canvas.width, height: this.canvas.height };
+      }
+    }
+    return null;
+  },
+
+  applyFiltersToAllPages() {
+    if (this.state.pages.length === 0) {
+      this.showToast(t('noImage'));
+      return;
+    }
+    const snapshot = { ...this.state.filters };
+    this.state.pages.forEach((p) => {
+      p._filters = { ...snapshot };
+    });
+    this.state.dirty = true;
+    this.showToast(t('applyFilterAllDone', this.state.pages.length), 'success');
+  },
+
+  async batchAutoCropAllPages() {
+    if (this.state.pages.length === 0) {
+      this.showToast(t('noImage'));
+      return 0;
+    }
+    this.showToast(t('processing'));
+    let croppedCount = 0;
+    const total = this.state.pages.length;
+
+    for (let idx = 0; idx < total; idx++) {
+      const page = this.state.pages[idx];
+      if (!page) continue;
+      try {
+        let img = page.originalImage;
+        if (!img && page.pendingSrc) {
+          img = await new Promise((resolve) => {
+            const im = new Image();
+            im.onload = () => resolve(im);
+            im.onerror = () => resolve(null);
+            im.src = page.pendingSrc;
+          });
+        }
+        if (!img) continue;
+
+        const w = img.naturalWidth || img.width;
+        const h = img.naturalHeight || img.height;
+        const workCanvas = document.createElement('canvas');
+        workCanvas.width = w;
+        workCanvas.height = h;
+        const workCtx = workCanvas.getContext('2d', { willReadFrequently: true });
+        workCtx.drawImage(img, 0, 0, w, h);
+
+        let det = null;
+        if (page.corners && page.corners.length === 4 && (page.confidence ?? 0) >= 0.3) {
+          det = { corners: page.corners, confidence: page.confidence };
+        } else {
+          det = await deepscan.detect(workCanvas);
+        }
+
+        if (det && det.corners && det.corners.length === 4 && (det.confidence ?? 0) >= 0.25) {
+          const ordered = (typeof edgeDetection !== 'undefined' && edgeDetection.orderCorners)
+            ? edgeDetection.orderCorners(det.corners)
+            : det.corners;
+          const topW = Math.hypot(ordered[1].x - ordered[0].x, ordered[1].y - ordered[0].y);
+          const botW = Math.hypot(ordered[2].x - ordered[3].x, ordered[2].y - ordered[3].y);
+          const leftH = Math.hypot(ordered[3].x - ordered[0].x, ordered[3].y - ordered[0].y);
+          const rightH = Math.hypot(ordered[2].x - ordered[1].x, ordered[2].y - ordered[1].y);
+          const targetW = Math.max(30, Math.round(Math.max(topW, botW)));
+          const targetH = Math.max(30, Math.round(Math.max(leftH, rightH)));
+          const warped = (typeof edgeDetection !== 'undefined' && edgeDetection.warpPerspective)
+            ? edgeDetection.warpPerspective(workCanvas, ordered, targetW, targetH)
+            : null;
+
+          if (warped && warped.width >= 20 && warped.height >= 20) {
+            if (idx === this.state.currentPageIndex && page.originalImage) {
+              this.saveUndoState();
+            }
+            const dataUrl = warped.toDataURL('image/jpeg', 0.92);
+            warped.width = 0;
+            warped.height = 0;
+            const newImg = await new Promise((resolve) => {
+              const im = new Image();
+              im.onload = () => resolve(im);
+              im.onerror = () => resolve(null);
+              im.src = dataUrl;
+            });
+            if (newImg) {
+              page.originalImage = newImg;
+              page.pendingSrc = null;
+              page.w = newImg.naturalWidth || newImg.width;
+              page.h = newImg.naturalHeight || newImg.height;
+              page.corners = null;
+              croppedCount++;
+            }
+          }
+        }
+        workCanvas.width = 0;
+        workCanvas.height = 0;
+      } catch (err) {
+        console.warn('Batch crop error on page', idx, err);
+      }
+    }
+
+    if (croppedCount > 0) {
+      this.state.dirty = true;
+      this.renderPage(this.state.currentPageIndex);
+      this.updatePagesTray();
+    }
+    this.showToast(t('batchCropDone', croppedCount, total), croppedCount > 0 ? 'success' : 'info');
+    return croppedCount;
+  },
+
+  async removeDocumentShadows() {
+    if (!this.state.imageLoaded || !this.state.pages[this.state.currentPageIndex]) {
+      this.showToast(t('noImage'));
+      return false;
+    }
+    if (!window.MLDetector?.removeShadows) return false;
+
+    this.saveUndoState();
+    const res = window.MLDetector.removeShadows(this.canvas, { strength: 1.0 });
+    if (!res || !res.canvas) return false;
+
+    this.ctx.drawImage(res.canvas, 0, 0);
+    const dataUrl = res.canvas.toDataURL('image/jpeg', 0.95);
+    res.canvas.width = 0;
+    res.canvas.height = 0;
+
+    const newImg = new Image();
+    newImg.src = dataUrl;
+    await new Promise(r => { newImg.onload = r; });
+    this.setCurrentPageImage(newImg);
+    this.state.dirty = true;
+    this.showToast(t('shadowRemoveDone'), 'success');
+    return true;
+  },
+
+  // --- Digital Signature & Watermark Overlay ---
+  initSignatureControls() {
+    const modal = document.getElementById('signatureModal');
+    const pad = document.getElementById('signaturePadCanvas');
+    if (!modal || !pad) return;
+
+    const ctx = pad.getContext('2d');
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 2.8;
+    ctx.strokeStyle = this.state.sigColor || '#0f172a';
+
+    let drawing = false;
+    let lastX = 0;
+    let lastY = 0;
+
+    const getCoords = (e) => {
+      const rect = pad.getBoundingClientRect();
+      const clientX = e.touches?.[0]?.clientX ?? e.clientX;
+      const clientY = e.touches?.[0]?.clientY ?? e.clientY;
+      const scaleX = pad.width / Math.max(1, rect.width);
+      const scaleY = pad.height / Math.max(1, rect.height);
+      return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY
+      };
+    };
+
+    const startDraw = (e) => {
+      e.preventDefault();
+      drawing = true;
+      this.state._sigHasInk = true;
+      const { x, y } = getCoords(e);
+      lastX = x;
+      lastY = y;
+      ctx.strokeStyle = this.state.sigColor || '#0f172a';
+      ctx.fillStyle = this.state.sigColor || '#0f172a';
+      ctx.beginPath();
+      ctx.arc(x, y, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    const moveDraw = (e) => {
+      if (!drawing) return;
+      e.preventDefault();
+      const { x, y } = getCoords(e);
+      ctx.strokeStyle = this.state.sigColor || '#0f172a';
+      ctx.lineWidth = 2.8;
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      lastX = x;
+      lastY = y;
+    };
+
+    const endDraw = () => {
+      drawing = false;
+    };
+
+    pad.addEventListener('mousedown', startDraw);
+    pad.addEventListener('mousemove', moveDraw);
+    window.addEventListener('mouseup', endDraw);
+    pad.addEventListener('touchstart', startDraw, { passive: false });
+    pad.addEventListener('touchmove', moveDraw, { passive: false });
+    window.addEventListener('touchend', endDraw);
+
+    // Tab switching
+    const tabSig = document.getElementById('tabSignatureBtn');
+    const tabWm = document.getElementById('tabWatermarkBtn');
+    const paneSig = document.getElementById('sigPaneSignature');
+    const paneWm = document.getElementById('sigPaneWatermark');
+
+    tabSig?.addEventListener('click', () => {
+      tabSig.classList.add('active');
+      tabWm?.classList.remove('active');
+      paneSig?.classList.remove('hidden');
+      paneWm?.classList.add('hidden');
+    });
+    tabWm?.addEventListener('click', () => {
+      tabWm.classList.add('active');
+      tabSig?.classList.remove('active');
+      paneWm?.classList.remove('hidden');
+      paneSig?.classList.add('hidden');
+    });
+
+    // Color pickers
+    document.querySelectorAll('.sig-color-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.sig-color-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.state.sigColor = btn.dataset.color || '#0f172a';
+      });
+    });
+
+    document.querySelectorAll('.wm-color-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.wm-color-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.state.wmColor = btn.dataset.color || '#475569';
+      });
+    });
+
+    const wmOpacity = document.getElementById('watermarkOpacity');
+    const wmOpacityVal = document.getElementById('watermarkOpacityVal');
+    wmOpacity?.addEventListener('input', () => {
+      if (wmOpacityVal) wmOpacityVal.textContent = wmOpacity.value + '%';
+    });
+
+    document.getElementById('clearSignatureBtn')?.addEventListener('click', () => this.clearSignaturePad());
+    document.getElementById('applySignatureBtn')?.addEventListener('click', () => this.applySignatureToPage());
+    document.getElementById('applyWatermarkBtn')?.addEventListener('click', () => this.applyWatermarkToPage());
+    document.getElementById('closeSignatureModal')?.addEventListener('click', () => this.closeSignatureModal());
+    document.getElementById('signatureBackdrop')?.addEventListener('click', () => this.closeSignatureModal());
+  },
+
+  clearSignaturePad() {
+    const pad = document.getElementById('signaturePadCanvas');
+    if (!pad) return;
+    const ctx = pad.getContext('2d');
+    ctx.clearRect(0, 0, pad.width, pad.height);
+    this.state._sigHasInk = false;
+  },
+
+  openSignatureModal() {
+    if (!this.state.imageLoaded || !this.state.pages[this.state.currentPageIndex]) {
+      this.showToast(t('noImage'));
+      return;
+    }
+    const modal = document.getElementById('signatureModal');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    modal.removeAttribute('inert');
+    lucide.createIcons({ root: modal });
+  },
+
+  closeSignatureModal() {
+    const modal = document.getElementById('signatureModal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.setAttribute('inert', '');
+  },
+
+  async applySignatureToPage() {
+    if (!this.state.imageLoaded || !this.state.pages[this.state.currentPageIndex]) return;
+    const pad = document.getElementById('signaturePadCanvas');
+    if (!pad || !this.state._sigHasInk) {
+      this.showToast(t('signatureEmpty'), 'warning');
+      return;
+    }
+
+    this.saveUndoState();
+    const pos = document.getElementById('signaturePosition')?.value || 'br';
+    const cw = this.canvas.width;
+    const ch = this.canvas.height;
+    const sigW = Math.round(cw * 0.28);
+    const sigH = Math.round(sigW * (pad.height / pad.width));
+    const margin = Math.max(16, Math.round(Math.min(cw, ch) * 0.04));
+
+    let dx = cw - sigW - margin;
+    let dy = ch - sigH - margin;
+    if (pos === 'bl') {
+      dx = margin;
+    } else if (pos === 'bc') {
+      dx = Math.round((cw - sigW) / 2);
+    } else if (pos === 'cc') {
+      dx = Math.round((cw - sigW) / 2);
+      dy = Math.round((ch - sigH) / 2);
+    }
+
+    const page = this.state.pages[this.state.currentPageIndex];
+    const baseCanvas = document.createElement('canvas');
+    baseCanvas.width = cw;
+    baseCanvas.height = ch;
+    const bCtx = baseCanvas.getContext('2d');
+    if (page?.originalImage) {
+      bCtx.drawImage(page.originalImage, 0, 0, cw, ch);
+    } else {
+      bCtx.drawImage(this.canvas, 0, 0, cw, ch);
+    }
+    bCtx.drawImage(pad, 0, 0, pad.width, pad.height, dx, dy, sigW, sigH);
+
+    const dataUrl = baseCanvas.toDataURL('image/png');
+    baseCanvas.width = 0;
+    baseCanvas.height = 0;
+
+    const newImg = new Image();
+    newImg.src = dataUrl;
+    await new Promise(r => { newImg.onload = r; });
+    this.setCurrentPageImage(newImg);
+    await this.applyFilters();
+    this.state.dirty = true;
+    this.closeSignatureModal();
+    this.showToast(t('signatureApplied'), 'success');
+  },
+
+  async applyWatermarkToPage() {
+    if (!this.state.imageLoaded || !this.state.pages[this.state.currentPageIndex]) return;
+    const textInput = document.getElementById('watermarkTextInput');
+    const wmText = (textInput?.value || '').trim();
+    if (!wmText) {
+      this.showToast(t('watermarkText'), 'warning');
+      return;
+    }
+
+    const style = document.getElementById('watermarkStyle')?.value || 'tiled';
+    const opacityPct = parseInt(document.getElementById('watermarkOpacity')?.value || '25', 10);
+    const alpha = Math.max(0.05, Math.min(0.85, opacityPct / 100));
+    const color = this.state.wmColor || '#475569';
+
+    this.saveUndoState();
+    const cw = this.canvas.width;
+    const ch = this.canvas.height;
+    const page = this.state.pages[this.state.currentPageIndex];
+
+    const baseCanvas = document.createElement('canvas');
+    baseCanvas.width = cw;
+    baseCanvas.height = ch;
+    const bCtx = baseCanvas.getContext('2d');
+    if (page?.originalImage) {
+      bCtx.drawImage(page.originalImage, 0, 0, cw, ch);
+    } else {
+      bCtx.drawImage(this.canvas, 0, 0, cw, ch);
+    }
+
+    bCtx.save();
+    bCtx.globalAlpha = alpha;
+    bCtx.fillStyle = color;
+    bCtx.strokeStyle = color;
+    bCtx.textAlign = 'center';
+    bCtx.textBaseline = 'middle';
+
+    const diag = Math.hypot(cw, ch);
+    if (style === 'tiled') {
+      const fontSize = Math.max(14, Math.round(Math.min(cw, ch) * 0.045));
+      bCtx.font = `700 ${fontSize}px sans-serif`;
+      bCtx.translate(cw / 2, ch / 2);
+      bCtx.rotate(-Math.PI / 6);
+      const stepX = Math.max(fontSize * 6, Math.round( bCtx.measureText(wmText).width + fontSize * 3 ));
+      const stepY = Math.max(fontSize * 3.5, Math.round(fontSize * 4));
+      for (let y = -diag; y <= diag; y += stepY) {
+        for (let x = -diag; x <= diag; x += stepX) {
+          bCtx.fillText(wmText, x, y);
+        }
+      }
+    } else if (style === 'single') {
+      const fontSize = Math.max(24, Math.round(Math.min(cw, ch) * 0.09));
+      bCtx.font = `800 ${fontSize}px sans-serif`;
+      bCtx.translate(cw / 2, ch / 2);
+      bCtx.rotate(-Math.PI / 6);
+      bCtx.fillText(wmText, 0, 0);
+    } else if (style === 'stamp') {
+      const fontSize = Math.max(18, Math.round(Math.min(cw, ch) * 0.055));
+      bCtx.font = `800 ${fontSize}px sans-serif`;
+      bCtx.translate(cw / 2, ch / 2);
+      bCtx.rotate(-Math.PI / 10);
+      const tw = bCtx.measureText(wmText).width;
+      const padX = fontSize * 0.8;
+      const padY = fontSize * 0.6;
+      bCtx.lineWidth = Math.max(3, Math.round(fontSize * 0.14));
+      bCtx.strokeRect(-tw / 2 - padX, -fontSize / 2 - padY, tw + padX * 2, fontSize + padY * 2);
+      bCtx.fillText(wmText, 0, 0);
+    }
+    bCtx.restore();
+
+    const dataUrl = baseCanvas.toDataURL('image/png');
+    baseCanvas.width = 0;
+    baseCanvas.height = 0;
+
+    const newImg = new Image();
+    newImg.src = dataUrl;
+    await new Promise(r => { newImg.onload = r; });
+    this.setCurrentPageImage(newImg);
+    await this.applyFilters();
+    this.state.dirty = true;
+    this.closeSignatureModal();
+    this.showToast(t('watermarkApplied'), 'success');
   },
 
   async renderAllPagesForPdf(maxDimension = config.IMAGE_MAX_SIZE) {
