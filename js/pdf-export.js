@@ -1,4 +1,49 @@
 const pdfExport = {
+  _jsPdfPromise: null,
+
+  async ensureJsPdf() {
+    if (typeof window.jspdf !== 'undefined' && window.jspdf.jsPDF) {
+      return window.jspdf.jsPDF;
+    }
+    if (!this._jsPdfPromise) {
+      this._jsPdfPromise = new Promise((resolve, reject) => {
+        const existing = document.querySelector('script[src*="jspdf"]');
+        if (existing) {
+          let waited = 0;
+          const poll = setInterval(() => {
+            if (typeof window.jspdf !== 'undefined' && window.jspdf.jsPDF) {
+              clearInterval(poll);
+              resolve(window.jspdf.jsPDF);
+            } else if ((waited += 100) >= 6000) {
+              clearInterval(poll);
+              reject(new Error('jsPDF library tidak tersedia. Periksa koneksi atau muat ulang halaman.'));
+            }
+          }, 100);
+          existing.addEventListener('error', () => {
+            clearInterval(poll);
+            reject(new Error('Gagal memuat library jsPDF.'));
+          }, { once: true });
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        script.onload = () => {
+          if (typeof window.jspdf !== 'undefined' && window.jspdf.jsPDF) {
+            resolve(window.jspdf.jsPDF);
+          } else {
+            reject(new Error('jsPDF library gagal diinisialisasi.'));
+          }
+        };
+        script.onerror = () => reject(new Error('Gagal memuat library jsPDF.'));
+        document.head.appendChild(script);
+      }).catch((err) => {
+        this._jsPdfPromise = null;
+        throw err;
+      });
+    }
+    return this._jsPdfPromise;
+  },
+
   _prepareCanvas(canvas, quality) {
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = canvas.width;
@@ -70,11 +115,7 @@ const pdfExport = {
 
   /** Build PDF as Blob (no auto-download) — used by folder save path. */
   async toPdfBlob(canvases, qualityOverride, opts = {}) {
-    if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
-      throw new Error('jsPDF library tidak tersedia. Coba perbarui halaman.');
-    }
-
-    const { jsPDF } = window.jspdf;
+    const jsPDF = await this.ensureJsPdf();
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
@@ -121,14 +162,11 @@ const pdfExport = {
   },
 
   async toPdfBlobFromPages(pageCount, renderPage, qualityOverride, opts = {}) {
-    if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
-      throw new Error('jsPDF library tidak tersedia. Coba perbarui halaman.');
-    }
+    const jsPDF = await this.ensureJsPdf();
     if (!Number.isInteger(pageCount) || pageCount < 1 || typeof renderPage !== 'function') {
       throw new Error('Tidak ada halaman valid untuk diekspor.');
     }
 
-    const { jsPDF } = window.jspdf;
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
@@ -176,6 +214,67 @@ const pdfExport = {
     return pdf.output('blob');
   },
 
+  /**
+   * Build PDF constrained under a target byte budget (e.g., 500 KB / 1 MB / 2 MB)
+   * using binary search over JPEG quality and optional resolution downscaling.
+   */
+  async toPdfBlobWithTargetSize(pageCount, renderPageWithMaxDim, initialQuality, targetBytes, opts = {}) {
+    const startQ = initialQuality ?? 0.85;
+    let bestBlob = await this.toPdfBlobFromPages(
+      pageCount,
+      (idx) => renderPageWithMaxDim(idx, config?.IMAGE_MAX_SIZE || 3000),
+      startQ,
+      opts
+    );
+    if (!targetBytes || targetBytes <= 0 || bestBlob.size <= targetBytes) {
+      return { blob: bestBlob, quality: startQ, matchedTarget: true };
+    }
+
+    // Binary search quality between 0.12 and startQ
+    let lo = 0.12;
+    let hi = startQ;
+    let fitBlob = null;
+    let fitQ = lo;
+
+    for (let step = 0; step < 4; step++) {
+      const mid = Math.round(((lo + hi) / 2) * 100) / 100;
+      const candidate = await this.toPdfBlobFromPages(
+        pageCount,
+        (idx) => renderPageWithMaxDim(idx, config?.IMAGE_MAX_SIZE || 3000),
+        mid,
+        opts
+      );
+      if (candidate.size <= targetBytes) {
+        fitBlob = candidate;
+        fitQ = mid;
+        lo = mid;
+      } else {
+        bestBlob = candidate;
+        hi = mid;
+      }
+    }
+
+    if (fitBlob) {
+      return { blob: fitBlob, quality: fitQ, matchedTarget: true };
+    }
+
+    // If even lowest quality at full resolution exceeds target, downscale max dimension
+    for (const dim of [1400, 1000, 720]) {
+      const candidate = await this.toPdfBlobFromPages(
+        pageCount,
+        (idx) => renderPageWithMaxDim(idx, dim),
+        0.55,
+        opts
+      );
+      bestBlob = candidate;
+      if (candidate.size <= targetBytes) {
+        return { blob: candidate, quality: 0.55, matchedTarget: true };
+      }
+    }
+
+    return { blob: bestBlob, quality: 0.12, matchedTarget: bestBlob.size <= targetBytes };
+  },
+
   /** Build image as Blob (no auto-download). */
   toImageBlob(canvas, format, qualityOverride) {
     const mimeType = format === 'png' ? 'image/png' : 'image/jpeg';
@@ -219,10 +318,11 @@ const pdfExport = {
     const link = document.createElement('a');
     link.download = filename;
     link.href = url;
+    link.rel = 'noopener';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
 };
 

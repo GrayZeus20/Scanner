@@ -239,11 +239,67 @@ const app = {
         setTimeout(() => this.openCamera(), 350);
       } else if (action === 'import') {
         setTimeout(() => document.getElementById('fileInput')?.click(), 350);
+      } else if (action === 'share-target') {
+        setTimeout(() => this.consumeSharedFiles(), 250);
       }
     } catch (_) {}
 
+    // Desktop PWA File Handlers (launchQueue)
+    this.initFileLaunchQueue();
+
     // moved from inline <script> (CSP: no unsafe-inline) — same DOMContentLoaded timing
     if (window.MLDetector?.init) window.MLDetector.init();
+  },
+
+  async consumeSharedFiles() {
+    if (!('caches' in window)) return;
+    try {
+      const cache = await caches.open('webscanner-share-target');
+      const manifestRes = await cache.match('./__shared_manifest');
+      if (!manifestRes) return;
+      const meta = await manifestRes.json();
+      const files = [];
+      for (const item of meta) {
+        const res = await cache.match(item.key);
+        if (!res) continue;
+        const blob = await res.blob();
+        files.push(new File([blob], item.name || 'shared_image.jpg', { type: item.type || blob.type || 'image/jpeg' }));
+      }
+      await caches.delete('webscanner-share-target');
+      try {
+        window.history.replaceState({}, '', window.location.pathname);
+      } catch (_) {}
+      if (files.length > 0) {
+        await this.emit('deepscan:run', { files });
+        this.showToast(t('sharedFilesLoaded', files.length), 'success');
+      }
+    } catch (err) {
+      console.warn('consumeSharedFiles error:', err);
+    }
+  },
+
+  initFileLaunchQueue() {
+    if (!('launchQueue' in window) || typeof window.launchQueue?.setConsumer !== 'function') return;
+    try {
+      window.launchQueue.setConsumer(async (launchParams) => {
+        if (!launchParams?.files?.length) return;
+        const files = [];
+        for (const handle of launchParams.files) {
+          try {
+            if (typeof handle.getFile === 'function') {
+              files.push(await handle.getFile());
+            }
+          } catch (err) {
+            console.warn('launchQueue file read error:', err);
+          }
+        }
+        if (files.length > 0) {
+          await this.emit('deepscan:run', { files });
+        }
+      });
+    } catch (err) {
+      console.warn('initFileLaunchQueue error:', err);
+    }
   },
 
   initPwaInstall() {
@@ -440,6 +496,49 @@ const app = {
             close();
             break;
           }
+        }
+        return;
+      }
+
+      // Abaikan shortcut keyboard saat fokus di dalam input/textarea/select/contentEditable
+      const target = e.target;
+      if (target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)) {
+        return;
+      }
+
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      if (mod && !e.shiftKey && key === 'z') {
+        e.preventDefault();
+        this.undo();
+        return;
+      }
+      if (mod && (key === 'y' || (e.shiftKey && key === 'z'))) {
+        e.preventDefault();
+        this.redo();
+        return;
+      }
+      if (mod && key === 's') {
+        if (this.state.pages.length > 0) {
+          e.preventDefault();
+          this.renderDlPreviewStrip();
+          this.updateFolderStatus();
+          this.toggleSheet('exportSheet', true);
+          if (window.lucide) lucide.createIcons();
+        }
+        return;
+      }
+
+      if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !this.state.isCropping && this.state.pages.length > 1) {
+        const hasOpenOverlay = ['toolsSheet', 'filterSheet', 'ocrSheet', 'exportSheet', 'sessionGuardModal', 'pdfPreviewModal', 'permissionModal', 'signatureModal']
+          .some((id) => {
+            const el = document.getElementById(id);
+            return el && !el.classList.contains('hidden');
+          });
+        if (!hasOpenOverlay) {
+          e.preventDefault();
+          this.goToPage(this.state.currentPageIndex + (e.key === 'ArrowRight' ? 1 : -1));
         }
       }
     });
@@ -713,6 +812,64 @@ const app = {
     this.initExportButtons();
     this.initZoomControls();
     this.initSignatureControls();
+    this.initSheetSwipeClose();
+  },
+
+  goToPage(index) {
+    if (!this.state.pages.length) return;
+    const clamped = Math.max(0, Math.min(index, this.state.pages.length - 1));
+    if (clamped === this.state.currentPageIndex) return;
+    const page = this.state.pages[clamped];
+    this.state.currentPageIndex = clamped;
+    if (page?.pendingSrc) this.renderPendingPage(clamped);
+    else this.renderPage(clamped);
+    this.updatePagesTray();
+  },
+
+  initSheetSwipeClose() {
+    const sheets = ['toolsSheet', 'filterSheet', 'ocrSheet', 'exportSheet'];
+    sheets.forEach((sheetId) => {
+      const sheet = document.getElementById(sheetId);
+      const header = sheet?.querySelector('.sheet-header');
+      if (!sheet || !header) return;
+      let startY = 0;
+      let deltaY = 0;
+      let dragging = false;
+
+      header.addEventListener('touchstart', (e) => {
+        if (window.innerWidth > 768 || e.touches.length !== 1) return;
+        if (e.target.closest('button')) return;
+        dragging = true;
+        startY = e.touches[0].clientY;
+        deltaY = 0;
+        sheet.style.transition = 'none';
+      }, { passive: true });
+
+      header.addEventListener('touchmove', (e) => {
+        if (!dragging || e.touches.length !== 1) return;
+        deltaY = Math.max(0, e.touches[0].clientY - startY);
+        if (deltaY > 0) {
+          sheet.style.transform = `translateY(${deltaY}px)`;
+        }
+      }, { passive: true });
+
+      const endDrag = () => {
+        if (!dragging) return;
+        dragging = false;
+        sheet.style.transition = '';
+        sheet.style.transform = '';
+        if (deltaY > 55) {
+          if (sheetId === 'ocrSheet') {
+            this.cancelOcr();
+            ocrEngine.terminate();
+          }
+          this.toggleSheet(sheetId, false);
+        }
+      };
+
+      header.addEventListener('touchend', endDrag, { passive: true });
+      header.addEventListener('touchcancel', endDrag, { passive: true });
+    });
   },
 
   renderDlPreviewStrip() {
@@ -724,7 +881,7 @@ const app = {
       const div = document.createElement('div');
       div.className = 'dl-thumb' + (idx === this.state.currentPageIndex ? ' active' : '');
       div.innerHTML = `<img src="${src}" alt="${this.escapeHtml(page.name || 'page ' + (idx + 1))}"><span>${idx + 1}</span>`;
-      div.onclick = () => { this.state.currentPageIndex = idx; if (page.pendingSrc) this.renderPendingPage(idx); else this.renderPage(idx); this.renderDlPreviewStrip(); };
+      div.onclick = () => { this.goToPage(idx); this.renderDlPreviewStrip(); };
       strip.appendChild(div);
     });
   },
@@ -776,8 +933,9 @@ const app = {
       this.setZoom(this.state.zoom * factor, e.clientX, e.clientY);
     }, { passive: false });
 
-    // --- Touch events with inertia ---
+    // --- Touch events with inertia & horizontal page swipe ---
     let lastDist = 0;
+    let swipeStartX = 0, swipeStartY = 0, swipeStartTime = 0, swipeEligible = false;
 
     wrapper.addEventListener('touchstart', (e) => {
       if (isInteractive(e)) return;
@@ -786,6 +944,7 @@ const app = {
       if (e.touches.length === 2) {
         lastDist = this.getTouchDistance(e.touches);
         this.state.isPanning = false; // gestur pinch dimulai — batalkan pan
+        swipeEligible = false;
       } else if (e.touches.length === 1) {
         this.state.isPanning = true;
         this.state.panStartX = e.touches[0].clientX - this.state.panX;
@@ -793,6 +952,10 @@ const app = {
         lastMoveX = e.touches[0].clientX;
         lastMoveY = e.touches[0].clientY;
         lastMoveTime = performance.now();
+        swipeStartX = e.touches[0].clientX;
+        swipeStartY = e.touches[0].clientY;
+        swipeStartTime = lastMoveTime;
+        swipeEligible = this.state.zoom <= 1.05 && this.state.pages.length > 1;
       }
     }, { passive: true });
 
@@ -826,6 +989,21 @@ const app = {
     wrapper.addEventListener('touchend', (e) => {
       if (e.touches.length === 0 && this.state.isPanning) {
         this.state.isPanning = false;
+        if (swipeEligible && this.state.zoom <= 1.05 && this.state.pages.length > 1 && !this.state.isCropping) {
+          const touch = e.changedTouches?.[0];
+          const dx = (touch ? touch.clientX : lastMoveX) - swipeStartX;
+          const dy = (touch ? touch.clientY : lastMoveY) - swipeStartY;
+          const dt = performance.now() - swipeStartTime;
+          swipeEligible = false;
+          if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && dt < 450) {
+            const nextIdx = this.state.currentPageIndex + (dx < 0 ? 1 : -1);
+            if (nextIdx >= 0 && nextIdx < this.state.pages.length) {
+              this.goToPage(nextIdx);
+              return;
+            }
+          }
+        }
+        swipeEligible = false;
         if (Math.abs(velX) > 1 || Math.abs(velY) > 1) startInertia();
       }
     });
@@ -1429,6 +1607,28 @@ const app = {
     return 'Sesi_' + Date.now().toString(36);
   },
 
+  getExportFilename() {
+    const input = document.getElementById('exportFilename');
+    const raw = (input?.value || '').trim();
+    if (raw) {
+      const sanitized = raw
+        .replace(/\.(pdf|png|jpe?g)$/i, '')
+        .replace(/[\\/:*?"<>|]+/g, '_')
+        .replace(/\s+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 80);
+      if (sanitized) return sanitized;
+    }
+    return `${this.sessionLabel()}_${new Date().toISOString().slice(0, 10)}`;
+  },
+
+  getExportTargetBytes() {
+    const sel = document.getElementById('exportTargetSize');
+    const val = parseInt(sel?.value || '0', 10);
+    return Number.isFinite(val) && val > 0 ? val : 0;
+  },
+
   async updateFolderStatus() {
     const el = document.getElementById('folderStatus');
     if (!el) return;
@@ -1528,7 +1728,12 @@ const app = {
         console.warn('Folder write failed, falling back to browser download:', err);
       }
     }
-    jobs.forEach((job) => pdfExport._downloadBlob(job.blob, 'Scanner-' + job.name));
+    for (let i = 0; i < jobs.length; i++) {
+      pdfExport._downloadBlob(jobs[i].blob, 'Scanner-' + jobs[i].name);
+      if (i < jobs.length - 1) {
+        await new Promise((r) => setTimeout(r, 160));
+      }
+    }
     return false;
   },
 
@@ -1538,21 +1743,31 @@ const app = {
     this._exporting = true;
     const qualitySlider = document.getElementById('exportQuality');
     const quality = qualitySlider ? parseInt(qualitySlider.value) / 100 : 0.85;
-    const base = `${this.sessionLabel()}_${new Date().toISOString().slice(0, 10)}`;
+    const base = this.getExportFilename();
+    const targetBytes = this.getExportTargetBytes();
 
     this.showDlProgress(true, 10, t('downloadProgress'));
     try {
       let jobs = [];
       if (format === 'pdf' || format === 'batchPdf') {
-        const blob = await pdfExport.toPdfBlobFromPages(
-          this.state.pages.length,
-          (index) => this.renderPageForPdf(index),
-          quality,
-          {
-            searchable: this.state.searchablePdf !== false,
-            getOcrData: (index) => this.getPageOcrData(index)
-          }
-        );
+        const pdfOpts = {
+          searchable: this.state.searchablePdf !== false,
+          getOcrData: (index) => this.getPageOcrData(index)
+        };
+        const blob = targetBytes > 0
+          ? (await pdfExport.toPdfBlobWithTargetSize(
+              this.state.pages.length,
+              (index, maxDim) => this.renderPageForPdf(index, maxDim),
+              quality,
+              targetBytes,
+              pdfOpts
+            )).blob
+          : await pdfExport.toPdfBlobFromPages(
+              this.state.pages.length,
+              (index) => this.renderPageForPdf(index),
+              quality,
+              pdfOpts
+            );
         jobs = [{ name: `${base}.pdf`, blob }];
       } else if (format === 'batchJpg') {
         for (let index = 0; index < this.state.pages.length; index++) {
@@ -1568,8 +1783,19 @@ const app = {
             canvas.height = 0;
           }
         }
-      } else if (format === 'png') {
-        jobs = [{ name: `${base}.png`, blob: pdfExport.toImageBlob(this.canvas, 'png', quality) }];
+      } else if (format === 'png' || format === 'jpg') {
+        const ext = format === 'png' ? 'png' : 'jpg';
+        const rendered = await this.renderPageForPdf(this.state.currentPageIndex);
+        if (rendered) {
+          try {
+            jobs = [{ name: `${base}.${ext}`, blob: pdfExport.toImageBlob(rendered, ext, quality) }];
+          } finally {
+            rendered.width = 0;
+            rendered.height = 0;
+          }
+        } else {
+          jobs = [{ name: `${base}.${ext}`, blob: pdfExport.toImageBlob(this.canvas, ext, quality) }];
+        }
       } else {
         jobs = [{ name: `${base}.jpg`, blob: pdfExport.toImageBlob(this.canvas, 'jpg', quality) }];
       }
@@ -1594,10 +1820,13 @@ const app = {
       this.showToast(t('error'));
       return;
     }
+    let rendered = null;
     try {
-      const blob = await new Promise(r => this.canvas.toBlob(r, 'image/jpeg', 0.92));
+      rendered = await this.renderPageForPdf(this.state.currentPageIndex);
+      const srcCanvas = rendered || this.canvas;
+      const blob = await new Promise(r => srcCanvas.toBlob(r, 'image/jpeg', 0.92));
       if (!blob) throw new Error('Failed to generate image');
-      const file = new File([blob], 'scan_' + Date.now() + '.jpg', { type: 'image/jpeg' });
+      const file = new File([blob], `${this.getExportFilename()}.jpg`, { type: 'image/jpeg' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ title: 'WebScanner', files: [file] });
       } else {
@@ -1611,6 +1840,11 @@ const app = {
       }
       console.warn('Share error:', err);
       this.showToast(t('error'));
+    } finally {
+      if (rendered) {
+        rendered.width = 0;
+        rendered.height = 0;
+      }
     }
   },
 
@@ -2851,26 +3085,38 @@ const app = {
     };
 
     // Confirm export → folder Scanner (fallback: browser download)
-    document.getElementById('confirmPdfExport').onclick = async () => {
+    const confirmPdfBtn = document.getElementById('confirmPdfExport');
+    confirmPdfBtn.onclick = async () => {
       if (this._exporting) return; // guard dobel klik
       this._exporting = true;
+      confirmPdfBtn.disabled = true;
       modal.classList.add('hidden');
       modal.setAttribute('inert', '');
       const qualitySlider = document.getElementById('exportQuality');
       const quality = qualitySlider ? parseInt(qualitySlider.value) / 100 : 0.85;
-      const base = `${this.sessionLabel()}_${new Date().toISOString().slice(0, 10)}`;
+      const base = this.getExportFilename();
+      const targetBytes = this.getExportTargetBytes();
       this.toggleSheet('exportSheet', true);
       this.showDlProgress(true, 20, t('downloadProgress'));
       try {
-        const blob = await pdfExport.toPdfBlobFromPages(
-          this._pdfPreviewPageCount,
-          (index) => this.renderPageForPdf(index),
-          quality,
-          {
-            searchable: this.state.searchablePdf !== false,
-            getOcrData: (index) => this.getPageOcrData(index)
-          }
-        );
+        const pdfOpts = {
+          searchable: this.state.searchablePdf !== false,
+          getOcrData: (index) => this.getPageOcrData(index)
+        };
+        const blob = targetBytes > 0
+          ? (await pdfExport.toPdfBlobWithTargetSize(
+              this._pdfPreviewPageCount,
+              (index, maxDim) => this.renderPageForPdf(index, maxDim),
+              quality,
+              targetBytes,
+              pdfOpts
+            )).blob
+          : await pdfExport.toPdfBlobFromPages(
+              this._pdfPreviewPageCount,
+              (index) => this.renderPageForPdf(index),
+              quality,
+              pdfOpts
+            );
         const usedFolder = await this.saveFiles([{ name: `${base}.pdf`, blob }]);
         this.showDlProgress(true, 100, t('downloadDone'));
         this.showToast(usedFolder ? t('downloadDone') : t('folderFallback'), 'success');
@@ -2883,9 +3129,10 @@ const app = {
         console.error('PDF export error:', err);
         this.showDlProgress(false);
         this.toggleSheet('exportSheet', false);
-        this.showToast(t('error'), 'error');
+        this.showToast(t('error') + ': ' + err.message, 'error');
       } finally {
         this._exporting = false;
+        confirmPdfBtn.disabled = false;
         this.releasePdfPreview();
       }
     };
@@ -2914,7 +3161,9 @@ const app = {
       previewCanvas.width = currentCanvas.width;
       previewCanvas.height = currentCanvas.height;
       ctx.drawImage(currentCanvas, 0, 0);
-      const estimatedSize = Math.round(currentCanvas.width * currentCanvas.height * 0.15);
+      const qualitySlider = document.getElementById('exportQuality');
+      const q = qualitySlider ? parseInt(qualitySlider.value) / 100 : 0.85;
+      const estimatedSize = Math.round(currentCanvas.width * currentCanvas.height * (0.05 + q * 0.16));
       currentCanvas.width = 0;
       currentCanvas.height = 0;
 

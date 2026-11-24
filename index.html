@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' blob: data: https://storage.googleapis.com https://tfhub.dev https://www.kaggle.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://tessdata.projectnaptha.com https://fonts.googleapis.com https://fonts.gstatic.com; worker-src 'self' blob: https://cdn.jsdelivr.net; child-src blob:; media-src 'self' blob: data:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' blob: data: https://storage.googleapis.com https://tfhub.dev https://www.kaggle.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://tessdata.projectnaptha.com https://fonts.googleapis.com https://fonts.gstatic.com; worker-src 'self' blob: https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; child-src blob:; media-src 'self' blob: data:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="description" content="Web-based document scanner with camera capture, auto edge detection, filters, OCR, and PDF export.">
   <meta name="theme-color" content="#2563EB">
@@ -22,8 +22,8 @@
   <meta property="og:description" content="Web document scanner dengan deteksi sudut otomatis, filter, OCR lokal, dan ekspor PDF 100% offline di perangkat.">
   <meta property="og:image" content="icons/icon-512.png">
   <meta property="og:type" content="website">
-  <link rel="stylesheet" href="css/style.css?v=19">
-  <link rel="stylesheet" href="css/dark-mode.css?v=19">
+  <link rel="stylesheet" href="css/style.css?v=21">
+  <link rel="stylesheet" href="css/dark-mode.css?v=21">
   <link rel="manifest" href="manifest.json">
   <script src="https://unpkg.com/lucide@0.460.0" async data-optional-icons></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" async></script>
@@ -589,6 +589,19 @@
               <small id="folderStatus">Scanner/</small>
             </div>
           </button>
+        </div>
+        <div class="wm-field">
+          <label for="exportFilename" data-i18n="exportFilename">Nama File</label>
+          <input type="text" id="exportFilename" class="wm-input" placeholder="Otomatis (nama sesi + tanggal)" maxlength="64">
+        </div>
+        <div class="wm-field-row">
+          <label for="exportTargetSize" data-i18n="targetFileSize">Target Ukuran PDF</label>
+          <select id="exportTargetSize" class="lang-select">
+            <option value="0" data-i18n="targetSizeNone">Bebas (Sesuai Kualitas)</option>
+            <option value="512000">Maks 500 KB</option>
+            <option value="1048576">Maks 1 MB</option>
+            <option value="2097152">Maks 2 MB</option>
+          </select>
         </div>
         <div class="filter-group">
           <label for="exportQuality" data-i18n="compressionQuality">Kualitas Kompresi</label>

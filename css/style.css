@@ -1091,12 +1091,21 @@ html, body {
   color: var(--color-text);
 }
 
-/* Filter Compare & Reset Buttons Row */
+/* Filter Compare, Apply-All & Reset Buttons Row */
 .filter-footer-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 4px;
+}
+
+.filter-footer-actions .btn {
+  flex: 1 1 calc(50% - 4px);
+  justify-content: center;
+}
+
+.filter-footer-actions #resetFilterBtn {
+  flex: 1 1 100%;
 }
 
 /* ─── Tool Action Buttons (Sleek List Items) ──────────────────── */
@@ -2064,6 +2073,24 @@ html, body {
     padding: 16px 16px calc(24px + var(--safe-bottom));
   }
 
+  .sheet-header {
+    position: relative;
+    padding-top: 20px;
+    touch-action: none;
+  }
+
+  .sheet-header::before {
+    content: '';
+    position: absolute;
+    top: 7px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--color-border-hover);
+  }
+
   /* Compact and uncrowded mobile header */
   #header {
     padding: var(--safe-top) 12px 0;
@@ -2147,7 +2174,7 @@ html, body {
 
 @media (max-width: 440px) {
   #header {
-    padding: 0 8px;
+    padding: var(--safe-top) 8px 0;
   }
 
   .logo-text {
@@ -2164,6 +2191,28 @@ html, body {
     max-width: 62px;
     padding: 3px 4px;
     font-size: 10px;
+  }
+
+  .crop-action-bar {
+    border-radius: var(--radius-lg);
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .pdf-preview-footer {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .pdf-preview-footer .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .sig-controls-row {
+    flex-wrap: wrap;
   }
 }
 
@@ -2304,8 +2353,9 @@ html, body {
     left: auto;
     right: 0;
     bottom: 0;
+    min-width: 340px;
     width: 400px;
-    max-width: 40vw;
+    max-width: min(420px, 45vw);
     height: auto;
     max-height: none;
     border-radius: 0;
@@ -2476,7 +2526,15 @@ html, body {
 .dl-folder-btn:hover { border-color: var(--color-accent); background: var(--color-accent-light); }
 .dl-folder-btn i, .dl-folder-btn svg { width: 22px; height: 22px; color: var(--color-accent); flex-shrink: 0; }
 .dl-folder-btn strong { display: block; font-size: 13px; color: var(--color-text); }
-.dl-folder-btn small { display: block; font-size: 11px; color: var(--color-text-secondary); margin-top: 2px; font-family: monospace; }
+.dl-folder-btn small {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+  font-family: monospace;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 
 .dl-grid {
   display: grid;
@@ -2537,7 +2595,27 @@ html, body {
 }
 .session-guard-actions .btn { width: 100%; justify-content: center; }
 
-@media (max-width: 400px) {
+@media (max-width: 768px) {
+  .dl-card {
+    padding: 10px;
+    min-height: 78px;
+    gap: 6px;
+  }
+  .dl-card i, .dl-card svg {
+    width: 20px;
+    height: 20px;
+  }
+  .pdf-preview-content,
+  .signature-modal-content {
+    width: calc(100vw - 20px);
+    max-height: 90dvh;
+  }
+  .signature-modal-content {
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 319px) {
   .dl-grid { grid-template-columns: 1fr; }
 }
 

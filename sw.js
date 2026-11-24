@@ -1,12 +1,13 @@
-const CACHE_NAME = 'webscanner-v19';
+const CACHE_NAME = 'webscanner-v21';
+const SHARE_CACHE = 'webscanner-share-target';
 
 const LOCAL_ASSETS = [
   './',
   'index.html',
-  // Kunci cache HARUS sama dengan URL request di index.html (?v=19),
+  // Kunci cache HARUS sama dengan URL request di index.html (?v=21),
   // kalau tidak, cold start offline tidak match → halaman tanpa style
-  'css/style.css?v=19',
-  'css/dark-mode.css?v=19',
+  'css/style.css?v=21',
+  'css/dark-mode.css?v=21',
   'js/config.js',
   'js/i18n.js',
   'js/camera.js',
@@ -46,16 +47,44 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => Promise.all(
-      keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+      keys.filter((key) => key !== CACHE_NAME && key !== SHARE_CACHE).map((key) => caches.delete(key))
     )).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
+  const url = new URL(request.url);
+
+  // Web Share Target API: receive shared image/PDF files via POST and hand off to app
+  if (request.method === 'POST' && url.origin === self.location.origin && url.pathname.endsWith('/share-target')) {
+    event.respondWith((async () => {
+      try {
+        const formData = await request.formData();
+        const files = formData.getAll('media').filter((f) => f && typeof f.arrayBuffer === 'function');
+        const cache = await caches.open(SHARE_CACHE);
+        const manifest = [];
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          const key = `./__shared_file_${i}`;
+          await cache.put(key, new Response(f, {
+            headers: { 'Content-Type': f.type || 'application/octet-stream' }
+          }));
+          manifest.push({ key, name: f.name || `shared_${i + 1}.jpg`, type: f.type || 'image/jpeg' });
+        }
+        await cache.put('./__shared_manifest', new Response(JSON.stringify(manifest), {
+          headers: { 'Content-Type': 'application/json' }
+        }));
+      } catch (err) {
+        console.warn('SW share-target error:', err);
+      }
+      return Response.redirect('./?action=share-target', 303);
+    })());
+    return;
+  }
+
   if (request.method !== 'GET') return;
 
-  const url = new URL(request.url);
   const isLocal = url.origin === self.location.origin;
 
   // Local resources: network-first with offline cache fallback
@@ -98,8 +127,9 @@ self.addEventListener('fetch', (event) => {
             caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           }
           return response;
-        }).catch(() => {
-          return caches.match(request);
+        }).catch(async () => {
+          const fallback = await caches.match(request);
+          return fallback || new Response('', { status: 503, statusText: 'Offline' });
         });
       })
     );

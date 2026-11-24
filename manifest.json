@@ -9,6 +9,30 @@
   "display_override": ["window-controls-overlay", "standalone", "minimal-ui", "browser"],
   "launch_handler": { "client_mode": ["navigate-new"] },
   "handle_links": "preferred",
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "image/*": [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"],
+        "application/pdf": [".pdf"]
+      }
+    }
+  ],
+  "share_target": {
+    "action": "./share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "files": [
+        {
+          "name": "media",
+          "accept": ["image/*", "application/pdf", ".png", ".jpg", ".jpeg", ".webp", ".pdf"]
+        }
+      ]
+    }
+  },
   "background_color": "#0F172A",
   "theme_color": "#2563EB",
   "orientation": "any",

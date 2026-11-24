@@ -199,6 +199,10 @@ const i18n = {
     applyWatermark: 'Terapkan Watermark',
     watermarkApplied: 'Watermark berhasil diterapkan!',
     pdfImported: (n) => `${n} halaman PDF berhasil diimpor`,
+    exportFilename: 'Nama File',
+    targetFileSize: 'Target Ukuran PDF',
+    targetSizeNone: 'Bebas (Sesuai Kualitas)',
+    sharedFilesLoaded: (n) => `${n} file diterima dari Share`,
   },
 
   en: {
@@ -402,6 +406,10 @@ const i18n = {
     applyWatermark: 'Apply Watermark',
     watermarkApplied: 'Watermark applied successfully!',
     pdfImported: (n) => `${n} PDF page(s) imported successfully`,
+    exportFilename: 'File Name',
+    targetFileSize: 'Target PDF Size',
+    targetSizeNone: 'Auto (Use Quality)',
+    sharedFilesLoaded: (n) => `${n} shared file(s) received`,
   },
 };
 
