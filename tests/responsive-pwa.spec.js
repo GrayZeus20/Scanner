@@ -275,6 +275,64 @@ test.describe('Responsive Layout & PWA Suite', () => {
     expect(manifest.share_target.method).toBe('POST');
     expect(manifest.share_target.enctype).toBe('multipart/form-data');
     expect(sw).toContain('/share-target');
+    expect(sw).toContain('fetchWithTimeout');
+    expect(sw).toContain('CRITICAL_CDN_ASSETS');
+  });
+
+  test('PWA Back button (popstate) closes active overlays before exiting and prompts double-back at home', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    await loadSampleImage(page);
+
+    // Open export sheet
+    await page.locator('#navExport').click();
+    await expect(page.locator('#exportSheet')).toBeVisible();
+
+    // Simulate hardware Back button on Android PWA
+    await page.evaluate(() => window.history.back());
+    await expect(page.locator('#exportSheet')).toHaveClass(/hidden/, { timeout: 3000 });
+    // App is still in editor (did not exit)
+    await expect(page.locator('#editorArea')).toBeVisible();
+
+    // Another Back in editor triggers goHome() (guard modal or emptyState)
+    await page.evaluate(() => window.history.back());
+    await page.waitForTimeout(250);
+    const guardVisible = await page.locator('#sessionGuardModal').isVisible();
+    if (guardVisible) {
+      // Back closes the guard modal cleanly
+      await page.evaluate(() => window.history.back());
+      await expect(page.locator('#sessionGuardModal')).toHaveClass(/hidden/, { timeout: 3000 });
+    }
+    expect(page.url()).toContain('localhost');
+  });
+
+  test('PDF export works offline via built-in pure-JS PDF encoder when jsPDF CDN is unavailable', async ({ page }) => {
+    // Block CDN requests to simulate offline / lie-fi cold start
+    await page.route('**/*unpkg.com/**', (route) => route.abort());
+    await page.route('**/*cdnjs.cloudflare.com/**', (route) => route.abort());
+
+    await page.goto('/');
+    await loadSampleImage(page);
+
+    // Verify app did not crash without lucide and PDF export still builds valid PDF 1.4
+    const pdfCheck = await page.evaluate(async () => {
+      window.jspdf = undefined;
+      window.pdfExport._jsPdfPromise = null;
+      const blob = await window.pdfExport.toPdfBlobFromPages(
+        1,
+        (idx) => window.app.renderPageForPdf(idx),
+        0.8
+      );
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      const head = new TextDecoder('latin1').decode(buf.slice(0, 8));
+      const tail = new TextDecoder('latin1').decode(buf.slice(Math.max(0, buf.length - 16)));
+      return { type: blob.type, size: blob.size, head, tail };
+    });
+
+    expect(pdfCheck.type).toBe('application/pdf');
+    expect(pdfCheck.size).toBeGreaterThan(200);
+    expect(pdfCheck.head).toContain('%PDF-1.4');
+    expect(pdfCheck.tail).toContain('%%EOF');
   });
 
   test('Custom export filename sanitization and target PDF size compression work', async ({ page }) => {

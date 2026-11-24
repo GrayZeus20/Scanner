@@ -1,13 +1,13 @@
-const CACHE_NAME = 'webscanner-v21';
+const CACHE_NAME = 'webscanner-v22';
 const SHARE_CACHE = 'webscanner-share-target';
 
 const LOCAL_ASSETS = [
   './',
   'index.html',
-  // Kunci cache HARUS sama dengan URL request di index.html (?v=21),
+  // Kunci cache HARUS sama dengan URL request di index.html (?v=22),
   // kalau tidak, cold start offline tidak match → halaman tanpa style
-  'css/style.css?v=21',
-  'css/dark-mode.css?v=21',
+  'css/style.css?v=22',
+  'css/dark-mode.css?v=22',
   'js/config.js',
   'js/i18n.js',
   'js/camera.js',
@@ -28,6 +28,19 @@ const LOCAL_ASSETS = [
   'icons/icon-512.png'
 ];
 
+// CDN kritis yang di-precache best-effort agar export PDF & ikon tetap jalan saat offline
+const CRITICAL_CDN_ASSETS = [
+  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+  'https://unpkg.com/lucide@0.460.0'
+];
+
+function fetchWithTimeout(request, timeoutMs = 2500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(request, { signal: controller.signal })
+    .finally(() => clearTimeout(timer));
+}
+
 self.addEventListener('install', (event) => {
   self.skipWaiting();
   event.waitUntil(
@@ -40,6 +53,17 @@ self.addEventListener('install', (event) => {
           console.warn('SW: Failed caching asset:', asset, err);
         }
       }
+      // Best-effort precache critical CDN libs with short timeout so install never stalls
+      await Promise.allSettled(
+        CRITICAL_CDN_ASSETS.map(async (url) => {
+          try {
+            const res = await fetchWithTimeout(url, 5000);
+            if (res && (res.ok || res.type === 'opaque')) {
+              await cache.put(url, res);
+            }
+          } catch (_) {}
+        })
+      );
     })
   );
 });
@@ -87,29 +111,51 @@ self.addEventListener('fetch', (event) => {
 
   const isLocal = url.origin === self.location.origin;
 
-  // Local resources: network-first with offline cache fallback
+  // Local resources: anti-lie-fi (fast timeout fallback to offline cache)
   if (isLocal) {
-    event.respondWith(
-      fetch(request).then((response) => {
+    // 1. Navigation (HTML): Network with 2s timeout -> instant offline cache fallback
+    if (request.mode === 'navigate') {
+      event.respondWith((async () => {
+        try {
+          const response = await fetchWithTimeout(request, 2000);
+          if (response && response.status === 200) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        } catch (_) {
+          const cached = (await caches.match(request)) || (await caches.match('index.html')) || (await caches.match('./'));
+          if (cached) return cached;
+          return new Response('Offline - halaman belum tersimpan di cache', { status: 503 });
+        }
+      })());
+      return;
+    }
+
+    // 2. Local static assets (CSS/JS/icons): Cache-First + background refresh (Stale-While-Revalidate)
+    // Menghindari layar macet saat jaringan lemah / lie-fi
+    event.respondWith((async () => {
+      const cached = await caches.match(request);
+      const networkPromise = fetchWithTimeout(request, 2500).then((response) => {
         if (response && response.status === 200) {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
         }
         return response;
-      }).catch(async () => {
-        const cached = await caches.match(request);
-        if (cached) return cached;
-        // Navigation fallback to index.html
-        if (request.mode === 'navigate') {
-          return caches.match('index.html');
-        }
-        return new Response('Offline - asset not cached', { status: 503 });
-      })
-    );
+      }).catch(() => null);
+
+      if (cached) {
+        event.waitUntil(networkPromise);
+        return cached;
+      }
+      const netRes = await networkPromise;
+      if (netRes) return netRes;
+      return new Response('Offline - asset not cached', { status: 503 });
+    })());
     return;
   }
 
-  // CDN & ML Model resources: Cache-First for instant offline ML & libraries
+  // CDN & ML Model resources: Cache-First with short timeout so lie-fi never stalls app/export
   const isCDN = url.hostname === 'unpkg.com' ||
     url.hostname === 'cdnjs.cloudflare.com' ||
     url.hostname === 'cdn.jsdelivr.net' ||
@@ -121,7 +167,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
-        return fetch(request).then((response) => {
+        return fetchWithTimeout(request, 3500).then((response) => {
           if (response && (response.ok || response.type === 'opaque')) {
             const copy = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));

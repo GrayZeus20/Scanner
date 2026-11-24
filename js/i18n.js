@@ -203,6 +203,8 @@ const i18n = {
     targetFileSize: 'Target Ukuran PDF',
     targetSizeNone: 'Bebas (Sesuai Kualitas)',
     sharedFilesLoaded: (n) => `${n} file diterima dari Share`,
+    pressBackAgain: 'Tekan kembali sekali lagi untuk keluar',
+    slowNetworkOffline: 'Jaringan lemah — berjalan dalam mode offline',
   },
 
   en: {
@@ -410,6 +412,8 @@ const i18n = {
     targetFileSize: 'Target PDF Size',
     targetSizeNone: 'Auto (Use Quality)',
     sharedFilesLoaded: (n) => `${n} shared file(s) received`,
+    pressBackAgain: 'Press back again to exit',
+    slowNetworkOffline: 'Weak network — running in offline mode',
   },
 };
 

@@ -112,7 +112,7 @@ const camera = {
       document.getElementById('bottomNav')?.classList.add('hidden');
       document.getElementById('homeBackBtn')?.classList.add('hidden');
       document.getElementById('emptyState')?.classList.add('hidden');
-      lucide.createIcons();
+      if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
     } catch (err) {
       console.error(err);
       if (err?.name === 'NotFoundError') {

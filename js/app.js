@@ -126,7 +126,7 @@ const app = {
       el.removeAttribute('inert');
       el.setAttribute('aria-hidden', 'false');
       delete el.dataset.ariaExpanded; // role=dialog tidak punya aria-expanded
-      lucide.createIcons({ root: el });
+      window.lucide?.createIcons({ root: el });
 
       // Focus first interactive element
       const firstFocusable = el.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
@@ -185,7 +185,7 @@ const app = {
     this.initEventListeners();
     this.syncDarkModeUI();
     camera.bindCaptureHandler();
-    lucide.createIcons();
+    window.lucide?.createIcons();
     this.registerEvents();
     storage.init().then(async () => {
       // One-time migration: legacy per-image scans → sessions
@@ -247,8 +247,162 @@ const app = {
     // Desktop PWA File Handlers (launchQueue)
     this.initFileLaunchQueue();
 
+    // PWA Back button handler & lifecycle cleanup (mencegah tombol Back Android langsung keluar)
+    this.initPwaBackHandler();
+
+    // Render ikon otomatis bila script lucide selesai dimuat async belakangan
+    const lucideScript = document.querySelector('script[src*="lucide"]');
+    if (lucideScript && !window.lucide) {
+      lucideScript.addEventListener('load', () => window.lucide?.createIcons(), { once: true });
+    }
+
     // moved from inline <script> (CSP: no unsafe-inline) — same DOMContentLoaded timing
     if (window.MLDetector?.init) window.MLDetector.init();
+  },
+
+  /**
+   * Mencegah tombol Back hardware/gestur di PWA Android langsung menutup aplikasi.
+   * Urutan tutup: Kamera → Crop/Inpaint → Modal → Bottom Sheet → Riwayat → Editor (goHome) → Double-back keluar.
+   */
+  initPwaBackHandler() {
+    if (this._pwaBackBound) return;
+    this._pwaBackBound = true;
+    this._lastBackPress = 0;
+
+    const pushGuard = () => {
+      try {
+        window.history.pushState({ pwaGuard: true }, '', window.location.href);
+      } catch (_) {}
+    };
+
+    // Pasang satu sentinel state di awal agar tombol Back pertama ditangkap popstate
+    if (!window.history.state?.pwaGuard) {
+      pushGuard();
+    }
+
+    window.addEventListener('popstate', () => {
+      const handled = this.handleBackNavigation();
+      if (handled) {
+        pushGuard();
+        return;
+      }
+      // Sudah di beranda tanpa overlay: pola double-back Android (2 detik)
+      const now = Date.now();
+      if (now - this._lastBackPress > 2000) {
+        this._lastBackPress = now;
+        this.showToast(t('pressBackAgain') || 'Tekan kembali sekali lagi untuk keluar', 'info');
+        pushGuard();
+      }
+    });
+
+    // Hentikan stream kamera saat PWA masuk background agar tidak freeze/lock saat dibuka lagi
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && typeof camera !== 'undefined' && camera.stream) {
+        camera.stop();
+        document.getElementById('cameraView')?.classList.add('hidden');
+        if (this.state.pages.length > 0) {
+          document.getElementById('editorArea')?.classList.remove('hidden');
+          document.getElementById('bottomNav')?.classList.remove('hidden');
+          document.getElementById('homeBackBtn')?.classList.remove('hidden');
+        } else {
+          document.getElementById('emptyState')?.classList.remove('hidden');
+        }
+      }
+    });
+  },
+
+  handleBackNavigation() {
+    // 1. Kamera aktif
+    const cameraView = document.getElementById('cameraView');
+    if (cameraView && !cameraView.classList.contains('hidden')) {
+      camera.stop();
+      cameraView.classList.add('hidden');
+      if (this.state.pages.length > 0) {
+        document.getElementById('editorArea')?.classList.remove('hidden');
+        document.getElementById('bottomNav')?.classList.remove('hidden');
+        document.getElementById('homeBackBtn')?.classList.remove('hidden');
+      } else {
+        document.getElementById('emptyState')?.classList.remove('hidden');
+      }
+      return true;
+    }
+
+    // 2. Manual crop / Inpaint aktif
+    if (this.state.isCropping) {
+      const cropOverlay = document.getElementById('cropOverlay');
+      const inpaintOverlay = document.getElementById('inpaintOverlay');
+      if (cropOverlay && !cropOverlay.classList.contains('hidden')) {
+        this.cancelManualCrop();
+        return true;
+      }
+      if (inpaintOverlay && !inpaintOverlay.classList.contains('hidden')) {
+        this.cancelInpaint();
+        return true;
+      }
+    }
+
+    // 3. Modal terbuka
+    const modals = [
+      ['sessionGuardModal', () => this.closeSessionGuard()],
+      ['pdfPreviewModal', () => {
+        const m = document.getElementById('pdfPreviewModal');
+        m.classList.add('hidden');
+        m.setAttribute('inert', '');
+        this.releasePdfPreview();
+      }],
+      ['permissionModal', () => {
+        const m = document.getElementById('permissionModal');
+        m.classList.add('hidden');
+        m.setAttribute('inert', '');
+      }],
+      ['signatureModal', () => this.closeSignatureModal()]
+    ];
+    for (const [modalId, close] of modals) {
+      const modal = document.getElementById(modalId);
+      if (modal && !modal.classList.contains('hidden')) {
+        close();
+        return true;
+      }
+    }
+
+    // 4. Bottom sheet terbuka
+    const sheets = ['toolsSheet', 'filterSheet', 'ocrSheet', 'exportSheet'];
+    for (const sheetId of sheets) {
+      const sheet = document.getElementById(sheetId);
+      if (sheet && !sheet.classList.contains('hidden')) {
+        if (sheetId === 'ocrSheet') {
+          this.cancelOcr();
+          ocrEngine.terminate();
+        }
+        this.toggleSheet(sheetId, false);
+        return true;
+      }
+    }
+
+    // 5. Tampilan Riwayat terbuka
+    const historyView = document.getElementById('historyView');
+    if (historyView && !historyView.classList.contains('hidden')) {
+      historyView.classList.add('hidden');
+      if (this.state.pages.length > 0) {
+        document.getElementById('editorArea')?.classList.remove('hidden');
+        document.getElementById('bottomNav')?.classList.remove('hidden');
+      } else {
+        document.getElementById('emptyState')?.classList.remove('hidden');
+        document.getElementById('bottomNav')?.classList.add('hidden');
+        document.getElementById('homeBackBtn')?.classList.add('hidden');
+      }
+      this.setActiveNav(null);
+      return true;
+    }
+
+    // 6. Sedang di Editor (ada halaman terbuka) -> kembali ke Beranda (dengan guard)
+    const editorArea = document.getElementById('editorArea');
+    if (editorArea && !editorArea.classList.contains('hidden') && this.state.pages.length > 0) {
+      this.goHome();
+      return true;
+    }
+
+    return false;
   },
 
   async consumeSharedFiles() {
@@ -315,7 +469,7 @@ const app = {
         e.preventDefault();
         deferredPrompt = e;
         if (pwaBtn) pwaBtn.classList.remove('hidden');
-        lucide.createIcons();
+        window.lucide?.createIcons();
       });
 
       const handleInstall = async () => {
@@ -341,18 +495,31 @@ const app = {
       });
     }
 
-    // Network status listener
+    // Network status & slow-network (lie-fi) offline fallback indicator
+    const updateNetworkBadge = (announceSlow = false) => {
+      const badge = document.getElementById('offlineBadge');
+      const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      const isSlow = !!(conn && (conn.effectiveType === 'slow-2g' || conn.effectiveType === '2g' || conn.saveData));
+      const isOfflineMode = !navigator.onLine || isSlow;
+      if (badge) badge.classList.toggle('hidden', !isOfflineMode);
+      if (announceSlow && navigator.onLine && isSlow) {
+        this.showToast(t('slowNetworkOffline') || 'Jaringan lemah — berjalan dalam mode offline', 'info');
+      }
+    };
+
     window.addEventListener('offline', () => {
       this.showToast(t('offlineActive') || 'Mode offline aktif', 'warning');
-      document.getElementById('offlineBadge')?.classList.remove('hidden');
+      updateNetworkBadge(false);
     });
     window.addEventListener('online', () => {
       this.showToast(t('onlineActive') || 'Kembali online', 'info');
-      document.getElementById('offlineBadge')?.classList.add('hidden');
+      updateNetworkBadge(false);
     });
-    if (!navigator.onLine) {
-      document.getElementById('offlineBadge')?.classList.remove('hidden');
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn && typeof conn.addEventListener === 'function') {
+      conn.addEventListener('change', () => updateNetworkBadge(true));
     }
+    updateNetworkBadge(false);
 
     // Persisten storage: minta browser untuk TIDAK menghapus IndexedDB + cache SW
     // saat storage pressure. Best-effort — Chrome bisa menolak tanpa user gesture,
@@ -525,7 +692,7 @@ const app = {
           this.renderDlPreviewStrip();
           this.updateFolderStatus();
           this.toggleSheet('exportSheet', true);
-          if (window.lucide) lucide.createIcons();
+          if (window.lucide) window.lucide?.createIcons();
         }
         return;
       }
@@ -662,7 +829,7 @@ const app = {
 
     document.getElementById('navTools').addEventListener('click', () => {
       this.toggleSheet('toolsSheet', true);
-      lucide.createIcons();
+      window.lucide?.createIcons();
     });
     document.getElementById('closeToolsSheet').addEventListener('click', () => this.toggleSheet('toolsSheet', false));
 
@@ -690,7 +857,7 @@ const app = {
     document.getElementById('toolFilterBtn').addEventListener('click', () => {
       this.toggleSheet('filterSheet', true);
       this.toggleSheet('toolsSheet', false);
-      lucide.createIcons();
+      window.lucide?.createIcons();
     });
     document.getElementById('toolOcrBtn').addEventListener('click', () => {
       this.startOcr();
@@ -770,7 +937,7 @@ const app = {
       this.renderDlPreviewStrip();
       this.updateFolderStatus();
       this.toggleSheet('exportSheet', true);
-      lucide.createIcons();
+      window.lucide?.createIcons();
     });
     document.getElementById('closeExportSheet').addEventListener('click', () => this.toggleSheet('exportSheet', false));
     document.getElementById('shareBtn').addEventListener('click', () => this.shareDoc());
@@ -1161,7 +1328,7 @@ const app = {
     if (themeMeta) {
       themeMeta.setAttribute('content', this.state.darkMode ? '#090B10' : '#2563EB');
     }
-    lucide.createIcons();
+    window.lucide?.createIcons();
   },
 
   setCurrentPageImage(image) {
@@ -1455,7 +1622,7 @@ const app = {
       tray.appendChild(thumb);
     });
 
-    lucide.createIcons({ root: tray });
+    window.lucide?.createIcons({ root: tray });
 
     setTimeout(() => {
       const active = tray.querySelector('.page-thumb.active');
@@ -1666,7 +1833,7 @@ const app = {
       backdrop.addEventListener('click', onDeny);
       modal.classList.remove('hidden');
       modal.removeAttribute('inert');
-      lucide.createIcons({ root: modal });
+      window.lucide?.createIcons({ root: modal });
     });
   },
 
@@ -1702,23 +1869,31 @@ const app = {
     }
   },
 
-  /** Write jobs [{name, blob}] into Scanner/ folder; anchor fallback. Returns true if folder write used. */
+  /** Write jobs [{name, blob}] into Scanner/ folder; anchor fallback with timeout guard so export never hangs. */
   async saveFiles(jobs) {
+    const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('folder-timeout')), ms);
+      promise.then(
+        (v) => { clearTimeout(timer); resolve(v); },
+        (e) => { clearTimeout(timer); reject(e); }
+      );
+    });
+
     const handle = await storage.getDirHandle().catch(() => null);
     if (handle && window.showDirectoryPicker) {
       try {
         if (handle.queryPermission) {
-          let perm = await handle.queryPermission({ mode: 'readwrite' });
-          if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'readwrite' });
+          let perm = await withTimeout(handle.queryPermission({ mode: 'readwrite' }), 4000);
+          if (perm !== 'granted') perm = await withTimeout(handle.requestPermission({ mode: 'readwrite' }), 8000);
           if (perm !== 'granted') throw new Error('permission-denied');
         }
-        const dir = await handle.getDirectoryHandle(config.DOWNLOAD.dirName, { create: true });
+        const dir = await withTimeout(handle.getDirectoryHandle(config.DOWNLOAD.dirName, { create: true }), 5000);
         let i = 0;
         for (const job of jobs) {
-          const fh = await dir.getFileHandle(job.name, { create: true });
-          const writer = await fh.createWritable();
-          await writer.write(job.blob);
-          await writer.close();
+          const fh = await withTimeout(dir.getFileHandle(job.name, { create: true }), 5000);
+          const writer = await withTimeout(fh.createWritable(), 5000);
+          await withTimeout(writer.write(job.blob), 15000);
+          await withTimeout(writer.close(), 5000);
           i++;
           this.showDlProgress(true, Math.round((i / jobs.length) * 100), t('downloadProgress'));
         }
@@ -1731,7 +1906,7 @@ const app = {
     for (let i = 0; i < jobs.length; i++) {
       pdfExport._downloadBlob(jobs[i].blob, 'Scanner-' + jobs[i].name);
       if (i < jobs.length - 1) {
-        await new Promise((r) => setTimeout(r, 160));
+        await new Promise((r) => setTimeout(r, 250));
       }
     }
     return false;
@@ -2352,7 +2527,7 @@ const app = {
 
     if (sessions.length === 0) {
       empty?.classList.remove('hidden');
-      lucide.createIcons({ root: document.getElementById('historyView') });
+      window.lucide?.createIcons({ root: document.getElementById('historyView') });
       return;
     }
     empty?.classList.add('hidden');
@@ -2391,7 +2566,7 @@ const app = {
       });
       list.appendChild(item);
     });
-    lucide.createIcons({ root: list });
+    window.lucide?.createIcons({ root: list });
   },
 
   async showHistory() { return this.showHome(); }, // backward compat
@@ -2419,7 +2594,7 @@ const app = {
     const modal = document.getElementById('sessionGuardModal');
     modal.classList.remove('hidden');
     modal.removeAttribute('inert');
-    lucide.createIcons({ root: modal });
+    window.lucide?.createIcons({ root: modal });
   },
 
   closeSessionGuard() {
@@ -2588,7 +2763,7 @@ const app = {
 
     btn.disabled = true;
     btn.innerHTML = `<i data-lucide="loader" aria-hidden="true"></i> ${t('aiAnalyzing')}`;
-    lucide.createIcons();
+    window.lucide?.createIcons();
     resultDiv.classList.remove('hidden');
     resultDiv.innerText = t('aiStarting');
 
@@ -2618,14 +2793,14 @@ const app = {
       }
       
       resultDiv.innerHTML = html;
-      lucide.createIcons();
+      window.lucide?.createIcons();
     } catch (err) {
       resultDiv.innerHTML = `<div style="color: var(--color-destructive);"><strong>Error:</strong> ${this.escapeHtml(err.message)}</div>`;
     } finally {
       this.state.isAnalyzing = false;
       btn.disabled = false;
       btn.innerHTML = `<i data-lucide="sparkles" aria-hidden="true"></i> ${t('aiAnalyze')}`;
-      lucide.createIcons();
+      window.lucide?.createIcons();
     }
   },
 
@@ -2658,14 +2833,14 @@ const app = {
     this.state.isOcrRunning = true;
 
     this.toggleSheet('ocrSheet', true);
-    lucide.createIcons();
+    window.lucide?.createIcons();
     const resultDiv = document.getElementById('ocrResult');
     resultDiv.innerHTML = `<p><i data-lucide="loader" aria-hidden="true"></i> ${t('ocrStarting')}</p>`;
     document.getElementById('aiResultArea').classList.add('hidden');
     this.showOcrProgress(true);
     this.updateOcrProgress(0);
     this.state.ocrAborted = false;
-    lucide.createIcons();
+    window.lucide?.createIcons();
 
     const langSelect = document.getElementById('ocrLangSelect');
     const selectedLang = langSelect ? langSelect.value : 'ind+eng';
@@ -2694,7 +2869,7 @@ const app = {
     } finally {
       this.state.isOcrRunning = false;
       this.showOcrProgress(false);
-      lucide.createIcons();
+      window.lucide?.createIcons();
     }
   },
 
@@ -3139,7 +3314,7 @@ const app = {
 
     modal.classList.remove('hidden');
     modal.removeAttribute('inert');
-    lucide.createIcons({ root: modal });
+    window.lucide?.createIcons({ root: modal });
   },
 
   updatePdfPreview() {
@@ -3563,7 +3738,7 @@ const app = {
     if (!modal) return;
     modal.classList.remove('hidden');
     modal.removeAttribute('inert');
-    lucide.createIcons({ root: modal });
+    window.lucide?.createIcons({ root: modal });
   },
 
   closeSignatureModal() {

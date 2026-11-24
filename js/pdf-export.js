@@ -5,36 +5,54 @@ const pdfExport = {
     if (typeof window.jspdf !== 'undefined' && window.jspdf.jsPDF) {
       return window.jspdf.jsPDF;
     }
+    // Fail fast when completely offline so offline fallback PDF encoder runs immediately
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new Error('Offline: jsPDF tidak tersedia di memori');
+    }
     if (!this._jsPdfPromise) {
       this._jsPdfPromise = new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (fn, val) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(hardTimer);
+          fn(val);
+        };
+        const hardTimer = setTimeout(() => {
+          finish(reject, new Error('Timeout memuat library jsPDF (jaringan lambat).'));
+        }, 4500);
+
         const existing = document.querySelector('script[src*="jspdf"]');
-        if (existing) {
-          let waited = 0;
+        if (existing && !existing.dataset.loadFailed) {
           const poll = setInterval(() => {
             if (typeof window.jspdf !== 'undefined' && window.jspdf.jsPDF) {
               clearInterval(poll);
-              resolve(window.jspdf.jsPDF);
-            } else if ((waited += 100) >= 6000) {
+              finish(resolve, window.jspdf.jsPDF);
+            } else if (settled) {
               clearInterval(poll);
-              reject(new Error('jsPDF library tidak tersedia. Periksa koneksi atau muat ulang halaman.'));
             }
           }, 100);
           existing.addEventListener('error', () => {
             clearInterval(poll);
-            reject(new Error('Gagal memuat library jsPDF.'));
+            existing.dataset.loadFailed = '1';
+            finish(reject, new Error('Gagal memuat library jsPDF.'));
           }, { once: true });
           return;
         }
+        if (existing) existing.remove();
         const script = document.createElement('script');
         script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
         script.onload = () => {
           if (typeof window.jspdf !== 'undefined' && window.jspdf.jsPDF) {
-            resolve(window.jspdf.jsPDF);
+            finish(resolve, window.jspdf.jsPDF);
           } else {
-            reject(new Error('jsPDF library gagal diinisialisasi.'));
+            finish(reject, new Error('jsPDF library gagal diinisialisasi.'));
           }
         };
-        script.onerror = () => reject(new Error('Gagal memuat library jsPDF.'));
+        script.onerror = () => {
+          script.dataset.loadFailed = '1';
+          finish(reject, new Error('Gagal memuat library jsPDF.'));
+        };
         document.head.appendChild(script);
       }).catch((err) => {
         this._jsPdfPromise = null;
@@ -42,6 +60,111 @@ const pdfExport = {
       });
     }
     return this._jsPdfPromise;
+  },
+
+  /**
+   * Pure-JS minimal PDF 1.4 encoder (zero external dependencies).
+   * Guarantees PDF export NEVER gets stuck even when 100% offline without jsPDF CDN.
+   * Each entry: { jpegBytes: Uint8Array, width: number, height: number }
+   */
+  _buildMinimalPdfBlob(pages) {
+    const enc = new TextEncoder();
+    const chunks = [];
+    let offset = 0;
+    const offsets = [0]; // object 0 is free
+
+    const pushBytes = (u8) => {
+      chunks.push(u8);
+      offset += u8.length;
+    };
+    const pushStr = (s) => pushBytes(enc.encode(s));
+
+    pushStr('%PDF-1.4\n%\xFF\xFF\xFF\xFF\n');
+
+    // Objects layout:
+    // 1: Catalog, 2: Pages
+    // For page i (0..N-1):
+    //   imgObj = 3 + i*3
+    //   contentObj = 4 + i*3
+    //   pageObj = 5 + i*3
+    const pageObjIds = pages.map((_, i) => 5 + i * 3);
+
+    // Obj 1: Catalog
+    offsets.push(offset);
+    pushStr('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+
+    // Obj 2: Pages
+    offsets.push(offset);
+    pushStr(`2 0 obj\n<< /Type /Pages /Kids [${pageObjIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pages.length} >>\nendobj\n`);
+
+    const a4W = 595.28;
+    const a4H = 841.89;
+    const margin = 28.35; // 10mm
+
+    pages.forEach((p, i) => {
+      const imgId = 3 + i * 3;
+      const contentId = 4 + i * 3;
+      const pageId = 5 + i * 3;
+
+      const ratio = p.width / Math.max(1, p.height);
+      const a4Ratio = a4W / a4H;
+      let drawW, drawH;
+      if (ratio > a4Ratio) {
+        drawW = a4W - margin * 2;
+        drawH = drawW / ratio;
+      } else {
+        drawH = a4H - margin * 2;
+        drawW = drawH * ratio;
+      }
+      const x = (a4W - drawW) / 2;
+      const y = (a4H - drawH) / 2;
+
+      // Image XObject (JPEG /DCTDecode)
+      offsets.push(offset);
+      pushStr(
+        `${imgId} 0 obj\n` +
+        `<< /Type /XObject /Subtype /Image /Width ${p.width} /Height ${p.height} ` +
+        `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.jpegBytes.length} >>\n` +
+        `stream\n`
+      );
+      pushBytes(p.jpegBytes);
+      pushStr('\nendstream\nendobj\n');
+
+      // Content stream
+      const streamStr = `q\n${drawW.toFixed(2)} 0 0 ${drawH.toFixed(2)} ${x.toFixed(2)} ${y.toFixed(2)} cm\n/Im0 Do\nQ\n`;
+      const streamBytes = enc.encode(streamStr);
+      offsets.push(offset);
+      pushStr(`${contentId} 0 obj\n<< /Length ${streamBytes.length} >>\nstream\n`);
+      pushBytes(streamBytes);
+      pushStr('endstream\nendobj\n');
+
+      // Page object
+      offsets.push(offset);
+      pushStr(
+        `${pageId} 0 obj\n` +
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${a4W.toFixed(2)} ${a4H.toFixed(2)}] ` +
+        `/Resources << /XObject << /Im0 ${imgId} 0 R >> >> /Contents ${contentId} 0 R >>\n` +
+        `endobj\n`
+      );
+    });
+
+    const xrefOffset = offset;
+    pushStr(`xref\n0 ${offsets.length}\n`);
+    pushStr('0000000000 65535 f \n');
+    for (let i = 1; i < offsets.length; i++) {
+      pushStr(String(offsets[i]).padStart(10, '0') + ' 00000 n \n');
+    }
+    pushStr(`trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`);
+
+    return new Blob(chunks, { type: 'application/pdf' });
+  },
+
+  _dataUrlToBytes(dataURL) {
+    const body = dataURL.split(',')[1] || '';
+    const bin = atob(body);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
   },
 
   _prepareCanvas(canvas, quality) {
@@ -115,11 +238,6 @@ const pdfExport = {
 
   /** Build PDF as Blob (no auto-download) — used by folder save path. */
   async toPdfBlob(canvases, qualityOverride, opts = {}) {
-    const jsPDF = await this.ensureJsPdf();
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
-
     const canvasList = Array.isArray(canvases) ? canvases : [canvases];
     const quality = qualityOverride || 0.85;
     const searchable = opts.searchable !== false;
@@ -128,6 +246,32 @@ const pdfExport = {
     if (canvasList.length === 0) {
       throw new Error('Tidak ada halaman untuk diekspor.');
     }
+
+    let jsPDF = null;
+    try {
+      jsPDF = await this.ensureJsPdf();
+    } catch (err) {
+      console.warn('jsPDF unavailable, using built-in offline PDF encoder:', err?.message || err);
+    }
+
+    if (!jsPDF) {
+      const entries = canvasList.map((canvas) => {
+        if (!canvas || canvas.width === 0 || canvas.height === 0) {
+          throw new Error('Salah satu halaman tidak valid.');
+        }
+        const imgData = this._prepareCanvas(canvas, quality);
+        return {
+          jpegBytes: this._dataUrlToBytes(imgData),
+          width: canvas.width,
+          height: canvas.height
+        };
+      });
+      return this._buildMinimalPdfBlob(entries);
+    }
+
+    const pdf = new jsPDF('p', 'mm', 'a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = pdf.internal.pageSize.getHeight();
 
     for (let i = 0; i < canvasList.length; i++) {
       const canvas = canvasList[i];
@@ -162,17 +306,46 @@ const pdfExport = {
   },
 
   async toPdfBlobFromPages(pageCount, renderPage, qualityOverride, opts = {}) {
-    const jsPDF = await this.ensureJsPdf();
     if (!Number.isInteger(pageCount) || pageCount < 1 || typeof renderPage !== 'function') {
       throw new Error('Tidak ada halaman valid untuk diekspor.');
+    }
+
+    const quality = qualityOverride ?? 0.85;
+    const searchable = opts.searchable !== false;
+    const getOcrData = typeof opts.getOcrData === 'function' ? opts.getOcrData : null;
+
+    let jsPDF = null;
+    try {
+      jsPDF = await this.ensureJsPdf();
+    } catch (err) {
+      console.warn('jsPDF unavailable, using built-in offline PDF encoder:', err?.message || err);
+    }
+
+    if (!jsPDF) {
+      const entries = [];
+      for (let index = 0; index < pageCount; index++) {
+        const canvas = await renderPage(index);
+        if (!canvas || canvas.width === 0 || canvas.height === 0) {
+          throw new Error(`Halaman ${index + 1} tidak valid.`);
+        }
+        try {
+          const imgData = this._prepareCanvas(canvas, quality);
+          entries.push({
+            jpegBytes: this._dataUrlToBytes(imgData),
+            width: canvas.width,
+            height: canvas.height
+          });
+        } finally {
+          canvas.width = 0;
+          canvas.height = 0;
+        }
+      }
+      return this._buildMinimalPdfBlob(entries);
     }
 
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
-    const quality = qualityOverride ?? 0.85;
-    const searchable = opts.searchable !== false;
-    const getOcrData = typeof opts.getOcrData === 'function' ? opts.getOcrData : null;
 
     for (let index = 0; index < pageCount; index++) {
       const canvas = await renderPage(index);
@@ -319,9 +492,13 @@ const pdfExport = {
     link.download = filename;
     link.href = url;
     link.rel = 'noopener';
+    link.style.display = 'none';
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    // Tunda penghapusan node & revoke URL agar Android PWA/WebView sempat memicu unduhan
+    setTimeout(() => {
+      if (link.parentNode) link.parentNode.removeChild(link);
+    }, 1500);
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
 };
